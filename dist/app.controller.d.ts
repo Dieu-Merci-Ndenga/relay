@@ -11,4 +11,6 @@ export declare class AppController {
         eventId: string;
         status: string;
     }>;
+    getAttempts(eventId: string): Promise<import("./events/event-store").DeliveryAttempt[]>;
+    getDeadLetters(): Promise<import("./events/event-store").DeadLetter[]>;
 }

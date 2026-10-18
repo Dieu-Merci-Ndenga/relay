@@ -11,6 +11,7 @@ import { InMemoryDeliveryQueue } from './delivery/in-memory-delivery.queue';
 describe('AppController', () => {
   let appController: AppController;
   let deliveryQueue: InMemoryDeliveryQueue;
+  let eventStore: InMemoryEventStore;
 
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
@@ -24,6 +25,7 @@ describe('AppController', () => {
 
     appController = app.get<AppController>(AppController);
     deliveryQueue = app.get<InMemoryDeliveryQueue>(DELIVERY_QUEUE);
+    eventStore = app.get<InMemoryEventStore>(EVENT_STORE);
   });
 
   describe('webhooks', () => {
@@ -51,6 +53,28 @@ describe('AppController', () => {
       await expect(
         appController.receiveWebhook('stripe', 'evt_456', 'invalid', request),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('exposes attempts and dead letters', async () => {
+      await eventStore.recordAttempt({
+        eventId: 'evt_failed',
+        attemptNumber: 5,
+        status: 'failed',
+        httpStatus: 503,
+        error: 'receiver unavailable',
+        durationMs: 42,
+      });
+      await eventStore.markDeadLetter({
+        eventId: 'evt_failed',
+        reason: 'receiver unavailable',
+      });
+
+      await expect(appController.getAttempts('evt_failed')).resolves.toEqual([
+        expect.objectContaining({ attemptNumber: 5, httpStatus: 503 }),
+      ]);
+      await expect(appController.getDeadLetters()).resolves.toEqual([
+        { eventId: 'evt_failed', reason: 'receiver unavailable' },
+      ]);
     });
   });
 });

@@ -13,4 +13,6 @@ export declare class AppService {
         eventId: string;
         status: string;
     }>;
+    getAttempts(eventId: string): Promise<import("./events/event-store").DeliveryAttempt[]>;
+    listDeadLetters(): Promise<import("./events/event-store").DeadLetter[]>;
 }

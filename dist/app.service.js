@@ -49,6 +49,12 @@ let AppService = class AppService {
             status: duplicate ? 'already_received' : 'received',
         };
     }
+    getAttempts(eventId) {
+        return this.eventStore.getAttempts(eventId);
+    }
+    listDeadLetters() {
+        return this.eventStore.listDeadLetters();
+    }
 };
 exports.AppService = AppService;
 exports.AppService = AppService = __decorate([

@@ -33,6 +33,12 @@ let AppController = class AppController {
             payload: request.body,
         });
     }
+    getAttempts(eventId) {
+        return this.appService.getAttempts(eventId);
+    }
+    getDeadLetters() {
+        return this.appService.listDeadLetters();
+    }
 };
 exports.AppController = AppController;
 __decorate([
@@ -45,6 +51,19 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, Object, Object]),
     __metadata("design:returntype", Promise)
 ], AppController.prototype, "receiveWebhook", null);
+__decorate([
+    (0, common_1.Get)('events/:eventId/attempts'),
+    __param(0, (0, common_1.Param)('eventId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], AppController.prototype, "getAttempts", null);
+__decorate([
+    (0, common_1.Get)('dead-letters'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], AppController.prototype, "getDeadLetters", null);
 exports.AppController = AppController = __decorate([
     (0, common_1.Controller)(),
     __metadata("design:paramtypes", [app_service_1.AppService])

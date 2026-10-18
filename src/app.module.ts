@@ -8,6 +8,7 @@ import { DELIVERY_QUEUE, DELIVERY_WORKER } from './delivery/delivery-queue';
 import { InMemoryDeliveryQueue } from './delivery/in-memory-delivery.queue';
 import { BullMqDeliveryQueue } from './delivery/bullmq-delivery.queue';
 import { BullMqDeliveryWorker } from './delivery/bullmq-delivery.worker';
+import type { EventStore } from './events/event-store';
 
 @Module({
   imports: [],
@@ -30,8 +31,11 @@ import { BullMqDeliveryWorker } from './delivery/bullmq-delivery.worker';
     },
     {
       provide: DELIVERY_WORKER,
-      useFactory: () =>
-        process.env.NODE_ENV === 'test' ? null : new BullMqDeliveryWorker(),
+      useFactory: (eventStore: EventStore) =>
+        process.env.NODE_ENV === 'test'
+          ? null
+          : new BullMqDeliveryWorker(eventStore),
+      inject: [EVENT_STORE],
     },
   ],
 })
