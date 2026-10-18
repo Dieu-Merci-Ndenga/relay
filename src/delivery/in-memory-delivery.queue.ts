@@ -5,7 +5,7 @@ import { DeliveryJob, DeliveryQueue } from './delivery-queue';
 export class InMemoryDeliveryQueue implements DeliveryQueue {
   readonly jobs: DeliveryJob[] = [];
 
-  async enqueue(job: DeliveryJob): Promise<void> {
+  async enqueue(job: DeliveryJob, _jobId?: string): Promise<void> {
     this.jobs.push(job);
   }
 }

@@ -13,4 +13,8 @@ export declare class AppController {
     }>;
     getAttempts(eventId: string): Promise<import("./events/event-store").DeliveryAttempt[]>;
     getDeadLetters(): Promise<import("./events/event-store").DeadLetter[]>;
+    retryEvent(eventId: string): Promise<{
+        eventId: string;
+        status: string;
+    }>;
 }

@@ -13,6 +13,7 @@ export type DeliveryAttempt = {
   httpStatus?: number;
   error?: string;
   durationMs: number;
+  createdAt?: string;
 };
 
 export type DeadLetter = {
@@ -22,8 +23,11 @@ export type DeadLetter = {
 
 export interface EventStore {
   saveIfNew(event: WebhookEvent): Promise<boolean>;
+  getEvent(eventId: string): Promise<WebhookEvent | undefined>;
   recordAttempt(attempt: DeliveryAttempt): Promise<void>;
   markDeadLetter(deadLetter: DeadLetter): Promise<void>;
+  getDeadLetter(eventId: string): Promise<DeadLetter | undefined>;
+  clearDeadLetter(eventId: string): Promise<void>;
   getAttempts(eventId: string): Promise<DeliveryAttempt[]>;
   listDeadLetters(): Promise<DeadLetter[]>;
 }

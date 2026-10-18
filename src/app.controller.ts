@@ -46,4 +46,9 @@ export class AppController {
   getDeadLetters() {
     return this.appService.listDeadLetters();
   }
+
+  @Post('events/:eventId/retry')
+  retryEvent(@Param('eventId') eventId: string) {
+    return this.appService.retryEvent(eventId);
+  }
 }

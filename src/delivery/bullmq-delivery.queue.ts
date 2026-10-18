@@ -21,9 +21,9 @@ export class BullMqDeliveryQueue implements DeliveryQueue, OnModuleDestroy {
     },
   });
 
-  async enqueue(job: DeliveryJob): Promise<void> {
+  async enqueue(job: DeliveryJob, jobId?: string): Promise<void> {
     await this.queue.add(`event:${job.eventId}`, job, {
-      jobId: job.eventId,
+      jobId: jobId ?? job.eventId,
     });
   }
 

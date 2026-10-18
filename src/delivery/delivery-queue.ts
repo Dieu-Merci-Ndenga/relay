@@ -8,5 +8,5 @@ export type DeliveryJob = {
 };
 
 export interface DeliveryQueue {
-  enqueue(job: DeliveryJob): Promise<void>;
+  enqueue(job: DeliveryJob, jobId?: string): Promise<void>;
 }

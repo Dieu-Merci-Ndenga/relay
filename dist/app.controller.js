@@ -39,6 +39,9 @@ let AppController = class AppController {
     getDeadLetters() {
         return this.appService.listDeadLetters();
     }
+    retryEvent(eventId) {
+        return this.appService.retryEvent(eventId);
+    }
 };
 exports.AppController = AppController;
 __decorate([
@@ -64,6 +67,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], AppController.prototype, "getDeadLetters", null);
+__decorate([
+    (0, common_1.Post)('events/:eventId/retry'),
+    __param(0, (0, common_1.Param)('eventId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], AppController.prototype, "retryEvent", null);
 exports.AppController = AppController = __decorate([
     (0, common_1.Controller)(),
     __metadata("design:paramtypes", [app_service_1.AppService])

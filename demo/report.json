@@ -1,0 +1,20 @@
+{
+  "eventCount": 5,
+  "submittedRequests": 10,
+  "acceptedRequests": 10,
+  "duplicateRequests": 5,
+  "totalAttempts": 15,
+  "failedAttempts": 10,
+  "deliveredAttempts": 5,
+  "averageAttemptDurationMs": 10,
+  "receiver": {
+    "available": true,
+    "deliveryCount": 15,
+    "appliedEffects": 5
+  },
+  "assertions": {
+    "retriedEveryEvent": true,
+    "eventuallyDeliveredEveryEvent": true,
+    "oneBusinessEffectPerEvent": true
+  }
+}

@@ -49,6 +49,18 @@ let AppService = class AppService {
             status: duplicate ? 'already_received' : 'received',
         };
     }
+    async retryEvent(eventId) {
+        const event = await this.eventStore.getEvent(eventId);
+        const deadLetter = await this.eventStore.getDeadLetter(eventId);
+        if (!event || !deadLetter) {
+            throw new common_1.NotFoundException('Event is not in the dead-letter queue');
+        }
+        await this.deliveryQueue.enqueue(event, `manual-retry:${eventId}:${Date.now()}`);
+        return {
+            eventId,
+            status: 'queued_for_retry',
+        };
+    }
     getAttempts(eventId) {
         return this.eventStore.getAttempts(eventId);
     }
