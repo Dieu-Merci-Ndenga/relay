@@ -46,15 +46,18 @@ Redis / BullMQ ------> Delivery worker ------> Downstream receiver
   delayed jobs          PostgreSQL history / DLQ
 ```
 
-### Technology Stack
+### Project Stack
 
-- TypeScript
-- NestJS
-- PostgreSQL
-- Redis
-- BullMQ
-- Docker Compose
-- Render Blueprint deployment
+| Technology | Role |
+| --- | --- |
+| TypeScript | Type-safe application and domain code |
+| NestJS | HTTP API, dependency injection, and application modules |
+| PostgreSQL | Durable event, attempt, and dead-letter storage |
+| Redis | Fast queue backend and distributed job coordination |
+| BullMQ | Asynchronous delivery, retries, and exponential backoff |
+| Docker | Reproducible local infrastructure with PostgreSQL and Redis |
+
+The project is deployed through a Render Blueprint defined in [render.yaml](render.yaml).
 
 ## API
 
