@@ -15,6 +15,11 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  @Get('health')
+  health() {
+    return { status: 'ok' };
+  }
+
   @Post('webhooks/:source')
   async receiveWebhook(
     @Param('source') source: string,

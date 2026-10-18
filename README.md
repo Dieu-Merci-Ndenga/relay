@@ -25,6 +25,17 @@ npm run start:dev
 
 Le schema `webhook_events` est cree automatiquement au premier evenement. PostgreSQL stocke les evenements et Redis porte la queue `relay-deliveries`. Les connexions et l'URL du destinataire sont definies dans [.env.example](.env.example).
 
+## Deploiement Render
+
+Le fichier [render.yaml](render.yaml) definit l'API, PostgreSQL et Redis. Depuis le dashboard Render, creer un Blueprint depuis le depot puis renseigner les variables marquees `sync: false` :
+
+```text
+WEBHOOK_SECRET=<secret long et aleatoire>
+DELIVERY_URL=https://<destinataire-public>/webhook-receiver
+```
+
+Le health check utilise `GET /health`. Render injecte automatiquement `PORT`, et les connexions PostgreSQL/Redis sont fournies par le Blueprint.
+
 ## Consultation
 
 ```text
