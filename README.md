@@ -1,65 +1,159 @@
 # Relay
 
-Plateforme de fiabilite pour la reception et la livraison d'evenements webhook.
+**Webhook reliability platform for resilient event delivery.**
 
-## Etat du projet
+Relay accepts signed webhook events, persists them safely, delivers them asynchronously, retries transient failures with exponential backoff, and prevents duplicate business effects through idempotency.
 
-Le premier vertical slice est en place :
+## Live Deployment
 
-- reception via `POST /webhooks/:source` ;
-- validation HMAC-SHA256 du corps brut ;
-- identifiant obligatoire `x-relay-event-id` ;
-- deduplication persistante dans PostgreSQL ;
-- historique des tentatives et dead-letter queue ;
-- tests unitaires et end-to-end.
+- **API:** [https://relay-api-brv0.onrender.com](https://relay-api-brv0.onrender.com)
+- **Health check:** [https://relay-api-brv0.onrender.com/health](https://relay-api-brv0.onrender.com/health)
 
-Le traitement BullMQ et la relance manuelle sont disponibles. Les tests utilisent un store memoire isole.
+## Why Relay Exists
 
-## Developpement
+Webhook providers can deliver the same event more than once, while downstream systems may be temporarily unavailable. A reliable consumer must acknowledge events safely, avoid blocking the incoming request on downstream availability, retry transient failures, preserve an auditable history, and provide an operational recovery path.
 
-```bash
-npm install
-docker compose up -d postgres
-npm run start:dev
-```
+Relay is designed around **at-least-once delivery** and explicit idempotency. Exactly-once delivery cannot be guaranteed across a database, a queue, and an external HTTP service, so Relay makes repeated delivery safe instead.
 
-Le schema `webhook_events` est cree automatiquement au premier evenement. PostgreSQL stocke les evenements et Redis porte la queue `relay-deliveries`. Les connexions et l'URL du destinataire sont definies dans [.env.example](.env.example).
+## Core Capabilities
 
-## Deploiement Render
+- HMAC-SHA256 signature validation using the raw request body.
+- Persistent event storage in PostgreSQL.
+- Idempotent event ingestion with a unique external event ID.
+- Asynchronous delivery through Redis and BullMQ.
+- Exponential backoff with up to five delivery attempts.
+- Delivery history including status, HTTP status, error, duration, and timestamp.
+- Dead-letter queue after the retry policy is exhausted.
+- Manual retry for dead-lettered events.
+- Graceful recovery when the downstream receiver becomes available again.
+- Automated unit, end-to-end, and real-world failure/recovery demonstrations.
 
-Le fichier [render.yaml](render.yaml) definit l'API, PostgreSQL et Redis. Depuis le dashboard Render, creer un Blueprint depuis le depot puis renseigner les variables marquees `sync: false` :
+## Architecture
 
 ```text
-WEBHOOK_SECRET=<secret long et aleatoire>
-DELIVERY_URL=https://<destinataire-public>/webhook-receiver
+Webhook provider
+	|
+	|  signed HTTP request
+	v
+NestJS API ------> PostgreSQL
+	|
+	|  idempotent enqueue
+	v
+Redis / BullMQ ------> Delivery worker ------> Downstream receiver
+	|                      |
+	| retries              | attempts, errors, durations
+	v                      v
+  delayed jobs          PostgreSQL history / DLQ
 ```
 
-Le health check utilise `GET /health`. Render injecte automatiquement `PORT`, et les connexions PostgreSQL/Redis sont fournies par le Blueprint.
+### Technology Stack
 
-## Consultation
+- TypeScript
+- NestJS
+- PostgreSQL
+- Redis
+- BullMQ
+- Docker Compose
+- Render Blueprint deployment
+
+## API
+
+### Receive an event
+
+```text
+POST /webhooks/:source
+```
+
+Required headers:
+
+```text
+x-relay-event-id: evt_123
+x-relay-signature: <HMAC-SHA256 hex digest>
+```
+
+### Inspect delivery attempts
 
 ```text
 GET /events/:eventId/attempts
+```
+
+### Inspect the dead-letter queue
+
+```text
 GET /dead-letters
+```
+
+### Retry a dead-lettered event
+
+```text
 POST /events/:eventId/retry
 ```
 
-La cle de signature utilisee par defaut est `dev-secret`. Elle peut etre remplacee avec `WEBHOOK_SECRET`.
+### Health check
 
-Exemple de signature :
+```text
+GET /health
+```
+
+## Local Development
+
+Requirements: Node.js, npm, and Docker.
 
 ```bash
-BODY='{"event":"payment.created"}'
+npm install
+docker compose up -d
+npm run start:dev
+```
+
+The default local configuration is documented in [.env.example](.env.example). PostgreSQL creates the required tables when the first event is received.
+
+## Example Request
+
+The signature must be calculated from the exact raw request body.
+
+```bash
+BODY='{"event":"payment.created","amount":4200}'
 SIGNATURE=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac dev-secret -hex | sed 's/^.* //')
 
 curl -i http://localhost:3000/webhooks/stripe \
-	-H 'content-type: application/json' \
-	-H 'x-relay-event-id: evt_123' \
-	-H "x-relay-signature: $SIGNATURE" \
-	--data "$BODY"
+  -H 'content-type: application/json' \
+  -H 'x-relay-event-id: evt_123' \
+  -H "x-relay-signature: $SIGNATURE" \
+  --data "$BODY"
 ```
 
-## Tests
+## Reliability Demonstration
+
+The repository includes a controllable receiver and a reproducible failure/recovery scenario:
+
+```bash
+# Terminal 1
+npm run demo:receiver
+
+# Terminal 2
+DELIVERY_URL=http://localhost:4000/webhook-receiver npm run start:dev
+
+# Terminal 3
+REPORT_FILE=./demo/report.json npm run demo:scenario
+```
+
+The scenario sends five events and duplicates each request while the receiver is unavailable. It then restores the receiver and verifies retries, eventual delivery, and one business effect per event.
+
+Measured run:
+
+```text
+Events: 5
+Submitted requests: 10
+Duplicate requests detected: 5
+Total delivery attempts: 15
+Failed attempts: 10
+Successful deliveries: 5
+Business effects applied: 5
+```
+
+The demo receiver is intentionally open for failure simulation and is not intended for production use without authentication and access control.
+
+## Tests and Build
 
 ```bash
 npm test -- --runInBand
@@ -67,19 +161,15 @@ npm run test:e2e -- --runInBand
 npm run build
 ```
 
-## Demonstration panne/reprise
+## Deployment on Render
 
-Dans deux terminaux, lancer l'API et le receiver de demonstration :
+[render.yaml](render.yaml) defines the API service, the demo receiver, PostgreSQL, and Redis. Render provides `PORT`, `DATABASE_URL`, and `REDIS_URL` through the Blueprint.
 
-```bash
-npm run demo:receiver
-DELIVERY_URL=http://localhost:4000/webhook-receiver npm run start:dev
+Set these secret or service-specific values in Render:
+
+```text
+WEBHOOK_SECRET=<long random secret>
+DELIVERY_URL=https://<receiver-service>.onrender.com/webhook-receiver
 ```
 
-Puis, dans un troisieme terminal :
-
-```bash
-npm run demo:scenario
-```
-
-Le rapport montre les tentatives en erreur, la reprise apres retour du receiver et un seul effet metier par evenement, meme apres des receptions dupliquees. Il peut etre exporte avec `REPORT_FILE=./demo/report.json npm run demo:scenario`.
+The receiver URL must be public. `localhost` cannot be used from a deployed Render service.
