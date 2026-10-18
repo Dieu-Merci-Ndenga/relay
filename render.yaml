@@ -31,3 +31,11 @@ services:
         sync: false
       - key: DELIVERY_URL
         sync: false
+
+  - type: web
+    name: relay-receiver
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run demo:receiver
+    healthCheckPath: /status

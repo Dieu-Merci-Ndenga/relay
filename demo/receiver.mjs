@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 
-const port = Number(process.env.RECEIVER_PORT ?? 4000);
+const port = Number(process.env.PORT ?? process.env.RECEIVER_PORT ?? 4000);
 let available = false;
 let deliveryCount = 0;
 const appliedEvents = new Set();
