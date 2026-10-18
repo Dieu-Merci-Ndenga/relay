@@ -48,6 +48,13 @@ describe('AppController (e2e)', () => {
       );
   });
 
+  it('reports a healthy application', () => {
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect({ status: 'ok' });
+  });
+
   afterEach(async () => {
     await app.close();
   });

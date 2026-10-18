@@ -20,6 +20,9 @@ let AppController = class AppController {
     constructor(appService) {
         this.appService = appService;
     }
+    health() {
+        return { status: 'ok' };
+    }
     async receiveWebhook(source, eventId, signature, request) {
         if (!eventId) {
             throw new common_1.BadRequestException('x-relay-event-id is required');
@@ -44,6 +47,12 @@ let AppController = class AppController {
     }
 };
 exports.AppController = AppController;
+__decorate([
+    (0, common_1.Get)('health'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], AppController.prototype, "health", null);
 __decorate([
     (0, common_1.Post)('webhooks/:source'),
     __param(0, (0, common_1.Param)('source')),
