@@ -31,10 +31,10 @@ Le fichier [render.yaml](render.yaml) definit l'API, PostgreSQL et Redis. Depuis
 
 ```text
 WEBHOOK_SECRET=<secret long et aleatoire>
-DELIVERY_URL=https://relay-receiver.onrender.com/webhook-receiver
+DELIVERY_URL=https://<destinataire-public>/webhook-receiver
 ```
 
-Le Blueprint cree aussi `relay-receiver`, un receiver public de demonstration. Apres le premier deploiement, copie son URL Render exacte dans `DELIVERY_URL` du service `relay-api`, puis redeploie l'API. Le health check de l'API utilise `GET /health` et celui du receiver `GET /status`. Render injecte automatiquement `PORT`, et les connexions PostgreSQL/Redis sont fournies par le Blueprint.
+Le health check utilise `GET /health`. Render injecte automatiquement `PORT`, et les connexions PostgreSQL/Redis sont fournies par le Blueprint.
 
 ## Consultation
 
