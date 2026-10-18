@@ -40,7 +40,10 @@ exports.AppModule = AppModule = __decorate([
             },
             {
                 provide: delivery_queue_1.DELIVERY_WORKER,
-                useFactory: () => process.env.NODE_ENV === 'test' ? null : new bullmq_delivery_worker_1.BullMqDeliveryWorker(),
+                useFactory: (eventStore) => process.env.NODE_ENV === 'test'
+                    ? null
+                    : new bullmq_delivery_worker_1.BullMqDeliveryWorker(eventStore),
+                inject: [event_store_1.EVENT_STORE],
             },
         ],
     })

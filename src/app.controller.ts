@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Get,
   Headers,
   Param,
   Post,
@@ -34,5 +35,15 @@ export class AppController {
       source,
       payload: request.body,
     });
+  }
+
+  @Get('events/:eventId/attempts')
+  getAttempts(@Param('eventId') eventId: string) {
+    return this.appService.getAttempts(eventId);
+  }
+
+  @Get('dead-letters')
+  getDeadLetters() {
+    return this.appService.listDeadLetters();
   }
 }

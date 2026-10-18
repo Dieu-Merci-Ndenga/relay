@@ -1,6 +1,11 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Pool } from 'pg';
-import { EventStore, WebhookEvent } from './event-store';
+import {
+  DeadLetter,
+  DeliveryAttempt,
+  EventStore,
+  WebhookEvent,
+} from './event-store';
 
 @Injectable()
 export class PostgresEventStore implements EventStore, OnModuleDestroy {
@@ -27,6 +32,69 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     return result.rowCount === 1;
   }
 
+  async recordAttempt(attempt: DeliveryAttempt): Promise<void> {
+    await this.ensureSchema();
+    await this.pool.query(
+      `
+        INSERT INTO delivery_attempts
+          (event_id, attempt_number, status, http_status, error, duration_ms)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        attempt.eventId,
+        attempt.attemptNumber,
+        attempt.status,
+        attempt.httpStatus ?? null,
+        attempt.error ?? null,
+        attempt.durationMs,
+      ],
+    );
+  }
+
+  async markDeadLetter(deadLetter: DeadLetter): Promise<void> {
+    await this.ensureSchema();
+    await this.pool.query(
+      `
+        INSERT INTO dead_letters (event_id, reason)
+        VALUES ($1, $2)
+        ON CONFLICT (event_id) DO UPDATE SET reason = EXCLUDED.reason
+      `,
+      [deadLetter.eventId, deadLetter.reason],
+    );
+  }
+
+  async getAttempts(eventId: string): Promise<DeliveryAttempt[]> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      `
+        SELECT event_id, attempt_number, status, http_status, error, duration_ms
+        FROM delivery_attempts
+        WHERE event_id = $1
+        ORDER BY attempt_number ASC
+      `,
+      [eventId],
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      attemptNumber: row.attempt_number,
+      status: row.status,
+      httpStatus: row.http_status ?? undefined,
+      error: row.error ?? undefined,
+      durationMs: row.duration_ms,
+    }));
+  }
+
+  async listDeadLetters(): Promise<DeadLetter[]> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      'SELECT event_id, reason FROM dead_letters ORDER BY failed_at DESC',
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      reason: row.reason,
+    }));
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.pool.end();
   }
@@ -39,6 +107,23 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           source TEXT NOT NULL,
           payload JSONB NOT NULL,
           received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS delivery_attempts (
+          id BIGSERIAL PRIMARY KEY,
+          event_id TEXT NOT NULL REFERENCES webhook_events(event_id),
+          attempt_number INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          http_status INTEGER,
+          error TEXT,
+          duration_ms INTEGER NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS dead_letters (
+          event_id TEXT PRIMARY KEY REFERENCES webhook_events(event_id),
+          reason TEXT NOT NULL,
+          failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `)
       .then(() => undefined);

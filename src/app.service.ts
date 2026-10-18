@@ -45,4 +45,12 @@ export class AppService {
       status: duplicate ? 'already_received' : 'received',
     };
   }
+
+  getAttempts(eventId: string) {
+    return this.eventStore.getAttempts(eventId);
+  }
+
+  listDeadLetters() {
+    return this.eventStore.listDeadLetters();
+  }
 }

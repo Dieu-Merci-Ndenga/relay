@@ -10,6 +10,7 @@ Le premier vertical slice est en place :
 - validation HMAC-SHA256 du corps brut ;
 - identifiant obligatoire `x-relay-event-id` ;
 - deduplication persistante dans PostgreSQL ;
+- historique des tentatives et dead-letter queue ;
 - tests unitaires et end-to-end.
 
 Le traitement BullMQ sera ajoute dans le prochain increment. Les tests utilisent un store memoire isole.
@@ -23,6 +24,13 @@ npm run start:dev
 ```
 
 Le schema `webhook_events` est cree automatiquement au premier evenement. PostgreSQL stocke les evenements et Redis porte la queue `relay-deliveries`. Les connexions et l'URL du destinataire sont definies dans [.env.example](.env.example).
+
+## Consultation
+
+```text
+GET /events/:eventId/attempts
+GET /dead-letters
+```
 
 La cle de signature utilisee par defaut est `dev-secret`. Elle peut etre remplacee avec `WEBHOOK_SECRET`.
 
