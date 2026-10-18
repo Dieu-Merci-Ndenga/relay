@@ -5,10 +5,10 @@ export declare class AppController {
     constructor(appService: AppService);
     receiveWebhook(source: string, eventId: string | undefined, signature: string | undefined, request: Request & {
         rawBody?: Buffer;
-    }): {
+    }): Promise<{
         accepted: boolean;
         duplicate: boolean;
         eventId: string;
         status: string;
-    };
+    }>;
 }

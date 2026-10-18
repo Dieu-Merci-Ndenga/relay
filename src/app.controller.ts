@@ -15,7 +15,7 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Post('webhooks/:source')
-  receiveWebhook(
+  async receiveWebhook(
     @Param('source') source: string,
     @Headers('x-relay-event-id') eventId: string | undefined,
     @Headers('x-relay-signature') signature: string | undefined,
