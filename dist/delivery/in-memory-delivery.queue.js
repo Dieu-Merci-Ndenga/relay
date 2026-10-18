@@ -10,7 +10,7 @@ exports.InMemoryDeliveryQueue = void 0;
 const common_1 = require("@nestjs/common");
 let InMemoryDeliveryQueue = class InMemoryDeliveryQueue {
     jobs = [];
-    async enqueue(job) {
+    async enqueue(job, _jobId) {
         this.jobs.push(job);
     }
 };

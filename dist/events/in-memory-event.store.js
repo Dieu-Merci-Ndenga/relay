@@ -9,21 +9,41 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InMemoryEventStore = void 0;
 const common_1 = require("@nestjs/common");
 let InMemoryEventStore = class InMemoryEventStore {
-    events = new Set();
+    events = new Map();
     attempts = [];
     deadLetters = [];
     async saveIfNew(event) {
         if (this.events.has(event.eventId)) {
             return false;
         }
-        this.events.add(event.eventId);
+        this.events.set(event.eventId, event);
         return true;
     }
+    async getEvent(eventId) {
+        return this.events.get(eventId);
+    }
     async recordAttempt(attempt) {
-        this.attempts.push(attempt);
+        this.attempts.push({
+            ...attempt,
+            createdAt: attempt.createdAt ?? new Date().toISOString(),
+        });
     }
     async markDeadLetter(deadLetter) {
+        const existingIndex = this.deadLetters.findIndex((item) => item.eventId === deadLetter.eventId);
+        if (existingIndex >= 0) {
+            this.deadLetters[existingIndex] = deadLetter;
+            return;
+        }
         this.deadLetters.push(deadLetter);
+    }
+    async getDeadLetter(eventId) {
+        return this.deadLetters.find((item) => item.eventId === eventId);
+    }
+    async clearDeadLetter(eventId) {
+        const index = this.deadLetters.findIndex((item) => item.eventId === eventId);
+        if (index >= 0) {
+            this.deadLetters.splice(index, 1);
+        }
     }
     async getAttempts(eventId) {
         return this.attempts.filter((attempt) => attempt.eventId === eventId);

@@ -25,9 +25,9 @@ let BullMqDeliveryQueue = class BullMqDeliveryQueue {
             removeOnFail: false,
         },
     });
-    async enqueue(job) {
+    async enqueue(job, jobId) {
         await this.queue.add(`event:${job.eventId}`, job, {
-            jobId: job.eventId,
+            jobId: jobId ?? job.eventId,
         });
     }
     async onModuleDestroy() {

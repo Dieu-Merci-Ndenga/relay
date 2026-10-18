@@ -40,6 +40,14 @@ let PostgresEventStore = class PostgresEventStore {
             attempt.durationMs,
         ]);
     }
+    async getEvent(eventId) {
+        await this.ensureSchema();
+        const result = await this.pool.query('SELECT event_id, source, payload FROM webhook_events WHERE event_id = $1', [eventId]);
+        const row = result.rows[0];
+        return row
+            ? { eventId: row.event_id, source: row.source, payload: row.payload }
+            : undefined;
+    }
     async markDeadLetter(deadLetter) {
         await this.ensureSchema();
         await this.pool.query(`
@@ -48,13 +56,25 @@ let PostgresEventStore = class PostgresEventStore {
         ON CONFLICT (event_id) DO UPDATE SET reason = EXCLUDED.reason
       `, [deadLetter.eventId, deadLetter.reason]);
     }
+    async getDeadLetter(eventId) {
+        await this.ensureSchema();
+        const result = await this.pool.query('SELECT event_id, reason FROM dead_letters WHERE event_id = $1', [eventId]);
+        const row = result.rows[0];
+        return row ? { eventId: row.event_id, reason: row.reason } : undefined;
+    }
+    async clearDeadLetter(eventId) {
+        await this.ensureSchema();
+        await this.pool.query('DELETE FROM dead_letters WHERE event_id = $1', [
+            eventId,
+        ]);
+    }
     async getAttempts(eventId) {
         await this.ensureSchema();
         const result = await this.pool.query(`
-        SELECT event_id, attempt_number, status, http_status, error, duration_ms
+        SELECT event_id, attempt_number, status, http_status, error, duration_ms, created_at
         FROM delivery_attempts
         WHERE event_id = $1
-        ORDER BY attempt_number ASC
+        ORDER BY created_at ASC, id ASC
       `, [eventId]);
         return result.rows.map((row) => ({
             eventId: row.event_id,
@@ -63,6 +83,7 @@ let PostgresEventStore = class PostgresEventStore {
             httpStatus: row.http_status ?? undefined,
             error: row.error ?? undefined,
             durationMs: row.duration_ms,
+            createdAt: row.created_at.toISOString(),
         }));
     }
     async listDeadLetters() {

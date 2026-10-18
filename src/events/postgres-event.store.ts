@@ -51,6 +51,18 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     );
   }
 
+  async getEvent(eventId: string): Promise<WebhookEvent | undefined> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      'SELECT event_id, source, payload FROM webhook_events WHERE event_id = $1',
+      [eventId],
+    );
+    const row = result.rows[0];
+    return row
+      ? { eventId: row.event_id, source: row.source, payload: row.payload }
+      : undefined;
+  }
+
   async markDeadLetter(deadLetter: DeadLetter): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
@@ -63,14 +75,31 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     );
   }
 
+  async getDeadLetter(eventId: string): Promise<DeadLetter | undefined> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      'SELECT event_id, reason FROM dead_letters WHERE event_id = $1',
+      [eventId],
+    );
+    const row = result.rows[0];
+    return row ? { eventId: row.event_id, reason: row.reason } : undefined;
+  }
+
+  async clearDeadLetter(eventId: string): Promise<void> {
+    await this.ensureSchema();
+    await this.pool.query('DELETE FROM dead_letters WHERE event_id = $1', [
+      eventId,
+    ]);
+  }
+
   async getAttempts(eventId: string): Promise<DeliveryAttempt[]> {
     await this.ensureSchema();
     const result = await this.pool.query(
       `
-        SELECT event_id, attempt_number, status, http_status, error, duration_ms
+        SELECT event_id, attempt_number, status, http_status, error, duration_ms, created_at
         FROM delivery_attempts
         WHERE event_id = $1
-        ORDER BY attempt_number ASC
+        ORDER BY created_at ASC, id ASC
       `,
       [eventId],
     );
@@ -81,6 +110,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       httpStatus: row.http_status ?? undefined,
       error: row.error ?? undefined,
       durationMs: row.duration_ms,
+      createdAt: row.created_at.toISOString(),
     }));
   }
 

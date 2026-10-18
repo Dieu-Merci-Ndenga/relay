@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { EVENT_STORE, WebhookEvent } from './events/event-store';
 import type { EventStore } from './events/event-store';
 import { DELIVERY_QUEUE } from './delivery/delivery-queue';
@@ -43,6 +43,22 @@ export class AppService {
       duplicate,
       eventId: event.eventId,
       status: duplicate ? 'already_received' : 'received',
+    };
+  }
+
+  async retryEvent(eventId: string) {
+    const event = await this.eventStore.getEvent(eventId);
+    const deadLetter = await this.eventStore.getDeadLetter(eventId);
+
+    if (!event || !deadLetter) {
+      throw new NotFoundException('Event is not in the dead-letter queue');
+    }
+
+    await this.deliveryQueue.enqueue(event, `manual-retry:${eventId}:${Date.now()}`);
+
+    return {
+      eventId,
+      status: 'queued_for_retry',
     };
   }
 

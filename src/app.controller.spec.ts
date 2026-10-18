@@ -76,5 +76,24 @@ describe('AppController', () => {
         { eventId: 'evt_failed', reason: 'receiver unavailable' },
       ]);
     });
+
+    it('queues a manual retry for a dead-letter event', async () => {
+      await eventStore.saveIfNew({
+        eventId: 'evt_retry',
+        source: 'stripe',
+        payload: { event: 'payment.created' },
+      });
+      await eventStore.markDeadLetter({
+        eventId: 'evt_retry',
+        reason: 'receiver unavailable',
+      });
+
+      await expect(appController.retryEvent('evt_retry')).resolves.toEqual({
+        eventId: 'evt_retry',
+        status: 'queued_for_retry',
+      });
+      expect(deliveryQueue.jobs).toHaveLength(1);
+      expect(deliveryQueue.jobs[0]).toMatchObject({ eventId: 'evt_retry' });
+    });
   });
 });

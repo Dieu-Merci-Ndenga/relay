@@ -51,6 +51,7 @@ export class BullMqDeliveryWorker implements OnModuleInit, OnModuleDestroy {
             httpStatus: response.status,
             durationMs: Date.now() - startedAt,
           });
+          await this.eventStore.clearDeadLetter(job.data.eventId);
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
           await this.eventStore.recordAttempt({
