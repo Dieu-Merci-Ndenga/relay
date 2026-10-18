@@ -98,6 +98,20 @@ POST /events/:eventId/retry
 GET /health
 ```
 
+## Frontend console
+
+Une console frontend autonome est disponible dans [`frontend/`](frontend/). Elle
+propose une vue de supervision responsive pour les événements, les endpoints et
+les dead letters, sans modifier la logique backend.
+
+Pour la prévisualiser localement, démarrez l’API puis servez le dossier avec
+n’importe quel serveur statique (par exemple `npx serve frontend`). Par défaut,
+elle appelle l’API sur la même origine. Si elle est servie sur une autre origine,
+précisez l’URL de l’API avec le paramètre `?api=https://relay-api.example.com`
+(l’API devra autoriser cette origine via CORS). La console utilise uniquement les
+endpoints existants `/health`, `/dead-letters`, `/events/:eventId/attempts` et
+`/events/:eventId/retry`.
+
 ## Local Development
 
 Requirements: Node.js, npm, and Docker.
@@ -166,13 +180,25 @@ npm run build
 
 ## Deployment on Render
 
-[render.yaml](render.yaml) defines the API service, the demo receiver, PostgreSQL, and Redis. Render provides `PORT`, `DATABASE_URL`, and `REDIS_URL` through the Blueprint.
+[render.yaml](render.yaml) defines the API service, the frontend static site,
+the demo receiver, PostgreSQL, and Redis. Render provides `PORT`,
+`DATABASE_URL`, and `REDIS_URL` through the Blueprint.
 
 Set these secret or service-specific values in Render:
 
 ```text
 WEBHOOK_SECRET=<long random secret>
 DELIVERY_URL=https://<receiver-service>.onrender.com/webhook-receiver
+FRONTEND_URL=https://<dashboard-service>.onrender.com
 ```
 
 The receiver URL must be public. `localhost` cannot be used from a deployed Render service.
+After deployment, open the dashboard URL with the API URL configured:
+
+```text
+https://<dashboard-service>.onrender.com/?api=https://<api-service>.onrender.com
+```
+
+`FRONTEND_URL` must match the dashboard origin exactly (without a trailing slash)
+so that the browser can call the API. For a custom frontend domain, use that
+domain instead. The backend keeps CORS disabled when `FRONTEND_URL` is unset.
