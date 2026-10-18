@@ -17,14 +17,14 @@ function hide(element) {
 function formatDate(value) {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
 }
 
 async function request(path, options) {
   const response = await fetch(`${apiBase}${path}`, options);
   let body;
   try { body = await response.json(); } catch { body = null; }
-  if (!response.ok) throw new Error(body?.message || `La requête a échoué (${response.status})`);
+  if (!response.ok) throw new Error(body?.message || `The request failed (${response.status})`);
   return body;
 }
 
@@ -46,7 +46,7 @@ function renderDeadLetters() {
     row.innerHTML = `<td><code>${escapeHtml(deadLetter.eventId)}</code></td><td>${escapeHtml(deadLetter.reason)}</td><td class="action-cell"></td>`;
     const button = document.createElement("button");
     button.className = "button small";
-    button.textContent = "Relancer";
+    button.textContent = "Retry";
     button.addEventListener("click", () => retryEvent(deadLetter.eventId, button));
     row.querySelector(".action-cell").append(button);
     rows.append(row);
@@ -60,7 +60,7 @@ async function loadDeadLetters() {
   hide(feedback);
   try {
     const result = await request("/dead-letters");
-    if (!Array.isArray(result)) throw new Error("Réponse inattendue de /dead-letters");
+    if (!Array.isArray(result)) throw new Error("Unexpected response from /dead-letters");
     state.deadLetters = result;
     renderDeadLetters();
   } catch (error) {
@@ -74,15 +74,15 @@ async function loadDeadLetters() {
 
 async function retryEvent(eventId, button) {
   button.disabled = true;
-  button.textContent = "Relance...";
+  button.textContent = "Retrying...";
   try {
     await request(`/events/${encodeURIComponent(eventId)}/retry`, { method: "POST" });
-    setFeedback($("#feedback"), `L’événement ${eventId} a été placé dans la file de retry.`, "success");
+    setFeedback($("#feedback"), `Event ${eventId} has been queued for retry.`, "success");
     await loadDeadLetters();
   } catch (error) {
     setFeedback($("#feedback"), error.message);
     button.disabled = false;
-    button.textContent = "Relancer";
+    button.textContent = "Retry";
   }
 }
 
@@ -95,7 +95,7 @@ async function loadAttempts(event) {
   hide(feedback);
   try {
     const attempts = await request(`/events/${encodeURIComponent(eventId)}/attempts`);
-    if (!Array.isArray(attempts)) throw new Error("Réponse inattendue de l’API");
+    if (!Array.isArray(attempts)) throw new Error("Unexpected response from the API");
     const rows = $("#attempt-rows");
     rows.replaceChildren();
     attempts.forEach((attempt) => {
@@ -105,7 +105,7 @@ async function loadAttempts(event) {
       rows.append(row);
     });
     table.hidden = false;
-    if (!attempts.length) setFeedback(feedback, "Aucune tentative enregistrée pour cet événement.", "notice");
+    if (!attempts.length) setFeedback(feedback, "No attempts recorded for this event.", "notice");
   } catch (error) {
     table.hidden = true;
     setFeedback(feedback, error.message);
@@ -115,12 +115,12 @@ async function loadAttempts(event) {
 async function checkHealth() {
   try {
     await request("/health");
-    $("#health-label").textContent = "opérationnelle";
-    $("#health-message").textContent = "API opérationnelle";
+    $("#health-label").textContent = "operational";
+    $("#health-message").textContent = "API operational";
     $("#health-card").classList.add("online");
   } catch {
-    $("#health-label").textContent = "indisponible";
-    $("#health-message").textContent = "API indisponible";
+    $("#health-label").textContent = "unavailable";
+    $("#health-message").textContent = "API unavailable";
     $("#health-card").classList.remove("online");
   }
 }
