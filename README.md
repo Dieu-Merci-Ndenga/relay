@@ -9,17 +9,20 @@ Le premier vertical slice est en place :
 - reception via `POST /webhooks/:source` ;
 - validation HMAC-SHA256 du corps brut ;
 - identifiant obligatoire `x-relay-event-id` ;
-- deduplication des evenements en memoire ;
+- deduplication persistante dans PostgreSQL ;
 - tests unitaires et end-to-end.
 
-La persistance PostgreSQL et le traitement BullMQ seront ajoutes dans les prochains increments.
+Le traitement BullMQ sera ajoute dans le prochain increment. Les tests utilisent un store memoire isole.
 
 ## Developpement
 
 ```bash
 npm install
+docker compose up -d postgres
 npm run start:dev
 ```
+
+Le schema `webhook_events` est cree automatiquement au premier evenement. PostgreSQL stocke les evenements et Redis porte la queue `relay-deliveries`. Les connexions et l'URL du destinataire sont definies dans [.env.example](.env.example).
 
 La cle de signature utilisee par defaut est `dev-secret`. Elle peut etre remplacee avec `WEBHOOK_SECRET`.
 

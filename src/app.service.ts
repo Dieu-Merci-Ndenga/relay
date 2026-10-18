@@ -1,16 +1,18 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
-
-type WebhookEvent = {
-  eventId: string;
-  source: string;
-  payload: unknown;
-};
+import { Inject, Injectable } from '@nestjs/common';
+import { EVENT_STORE, WebhookEvent } from './events/event-store';
+import type { EventStore } from './events/event-store';
+import { DELIVERY_QUEUE } from './delivery/delivery-queue';
+import type { DeliveryQueue } from './delivery/delivery-queue';
 
 @Injectable()
 export class AppService {
-  private readonly events = new Map<string, WebhookEvent>();
   private readonly secret = process.env.WEBHOOK_SECRET ?? 'dev-secret';
+
+  constructor(
+    @Inject(EVENT_STORE) private readonly eventStore: EventStore,
+    @Inject(DELIVERY_QUEUE) private readonly deliveryQueue: DeliveryQueue,
+  ) {}
 
   verifySignature(rawBody: Buffer | undefined, signature: string): boolean {
     if (!rawBody) {
@@ -29,11 +31,11 @@ export class AppService {
     );
   }
 
-  acceptEvent(event: WebhookEvent) {
-    const duplicate = this.events.has(event.eventId);
+  async acceptEvent(event: WebhookEvent) {
+    const duplicate = !(await this.eventStore.saveIfNew(event));
 
     if (!duplicate) {
-      this.events.set(event.eventId, event);
+      await this.deliveryQueue.enqueue(event);
     }
 
     return {
