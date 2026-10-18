@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Console d'exploitation Relay" />
+    <meta name="description" content="Relay operations console" />
     <title>Relay · Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,39 +15,39 @@
       <header class="topbar">
         <a class="brand" href="./"><span class="mark"><i></i><i></i><i></i></span>relay</a>
         <div class="topbar-actions">
-          <span class="environment"><i></i> API <strong id="health-label">vérification...</strong></span>
-          <button class="icon-button" id="refresh-button" title="Actualiser" aria-label="Actualiser">↻</button>
+          <span class="environment"><i></i> API <strong id="health-label">checking...</strong></span>
+          <button class="icon-button" id="refresh-button" title="Refresh" aria-label="Refresh">↻</button>
         </div>
       </header>
 
       <main>
         <section class="intro">
           <div>
-            <p class="overline">CONSOLE D&#39;EXPLOITATION</p>
-            <h1>Suivi des livraisons</h1>
-            <p class="description">Consultez les événements qui nécessitent une intervention et relancez leur livraison.</p>
+            <p class="overline">OPERATIONS CONSOLE</p>
+            <h1>Delivery monitoring</h1>
+            <p class="description">Review events that need attention and retry their delivery.</p>
           </div>
-          <div class="health-card" id="health-card"><span class="health-dot"></span><span id="health-message">Connexion à l&#39;API...</span></div>
+          <div class="health-card" id="health-card"><span class="health-dot"></span><span id="health-message">Connecting to API...</span></div>
         </section>
 
-        <section class="summary-row" aria-label="Résumé">
-          <div class="summary-card"><span class="summary-label">Dead letters</span><strong id="dead-letter-count">—</strong><span class="summary-note">événements à traiter</span></div>
-          <div class="summary-card"><span class="summary-label">Source des données</span><strong>API Relay</strong><span class="summary-note">données en temps réel</span></div>
+        <section class="summary-row" aria-label="Summary">
+          <div class="summary-card"><span class="summary-label">Dead letters</span><strong id="dead-letter-count">—</strong><span class="summary-note">events requiring action</span></div>
+          <div class="summary-card"><span class="summary-label">Data source</span><strong>Relay API</strong><span class="summary-note">live data</span></div>
         </section>
 
         <section class="workspace">
           <div class="section-heading">
-            <div><h2>Dead letters</h2><p>Événements dont les tentatives de livraison ont été épuisées.</p></div>
-            <button class="button secondary" id="reload-button">Actualiser</button>
+            <div><h2>Dead letters</h2><p>Events whose delivery attempts have been exhausted.</p></div>
+            <button class="button secondary" id="reload-button">Refresh</button>
           </div>
           <div class="feedback" id="feedback" role="status" hidden></div>
           <div class="empty-state" id="empty-state" hidden>
-            <span class="empty-icon">✓</span><h3>Aucune dead letter</h3><p>Les événements en échec définitif apparaîtront ici.</p>
+            <span class="empty-icon">✓</span><h3>No dead letters</h3><p>Events that permanently fail will appear here.</p>
           </div>
-          <div class="loading" id="loading">Chargement des dead letters...</div>
+          <div class="loading" id="loading">Loading dead letters...</div>
           <div class="table-container" id="dead-letter-table" hidden>
             <table>
-              <thead><tr><th>EVENT ID</th><th>RAISON</th><th class="action-heading">ACTION</th></tr></thead>
+              <thead><tr><th>EVENT ID</th><th>REASON</th><th class="action-heading">ACTION</th></tr></thead>
               <tbody id="dead-letter-rows"></tbody>
             </table>
           </div>
@@ -55,16 +55,16 @@
 
         <section class="workspace attempts-section">
           <div class="section-heading">
-            <div><h2>Historique des tentatives</h2><p>Consultez le détail d&#39;un événement à partir de son identifiant.</p></div>
+            <div><h2>Attempt history</h2><p>View delivery details by entering an event ID.</p></div>
           </div>
           <form class="lookup-form" id="attempt-form">
-            <label for="event-id">Identifiant de l&#39;événement</label>
-            <div class="input-row"><input id="event-id" name="eventId" placeholder="ex. evt_123" autocomplete="off" required /><button class="button primary" type="submit">Afficher les tentatives</button></div>
+            <label for="event-id">Event ID</label>
+            <div class="input-row"><input id="event-id" name="eventId" placeholder="e.g. evt_123" autocomplete="off" required /><button class="button primary" type="submit">View attempts</button></div>
           </form>
           <div class="attempts-feedback" id="attempts-feedback" hidden></div>
           <div class="table-container" id="attempts-table" hidden>
             <table>
-              <thead><tr><th>DATE</th><th>TENTATIVE</th><th>STATUT</th><th>HTTP</th><th>DURÉE</th><th>ERREUR</th></tr></thead>
+              <thead><tr><th>DATE</th><th>ATTEMPT</th><th>STATUS</th><th>HTTP</th><th>DURATION</th><th>ERROR</th></tr></thead>
               <tbody id="attempt-rows"></tbody>
             </table>
           </div>
