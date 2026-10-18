@@ -8,6 +8,7 @@ Relay accepts signed webhook events, persists them safely, delivers them asynchr
 
 - **API:** [https://relay-api-brv0.onrender.com](https://relay-api-brv0.onrender.com)
 - **Health check:** [https://relay-api-brv0.onrender.com/health](https://relay-api-brv0.onrender.com/health)
+- **Console:** [https://relay-dashboard-nrqs.onrender.com](https://relay-dashboard-nrqs.onrender.com/)
 
 ## Why Relay Exists
 
@@ -103,6 +104,9 @@ GET /health
 Une console frontend autonome est disponible dans [`frontend/`](frontend/). Elle
 propose une vue de supervision responsive pour les événements, les endpoints et
 les dead letters, sans modifier la logique backend.
+
+La console en ligne est accessible ici :
+[relay-dashboard-nrqs.onrender.com](https://relay-dashboard-nrqs.onrender.com/).
 
 Pour la prévisualiser localement, démarrez l’API puis servez le dossier avec
 n’importe quel serveur statique (par exemple `npx serve frontend`). Par défaut,
