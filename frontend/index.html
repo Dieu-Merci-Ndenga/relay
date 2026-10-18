@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Console d'exploitation Relay" />
+    <title>Relay · Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="./"><span class="mark"><i></i><i></i><i></i></span>relay</a>
+        <div class="topbar-actions">
+          <span class="environment"><i></i> API <strong id="health-label">vérification...</strong></span>
+          <button class="icon-button" id="refresh-button" title="Actualiser" aria-label="Actualiser">↻</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="overline">CONSOLE D’EXPLOITATION</p>
+            <h1>Suivi des livraisons</h1>
+            <p class="description">Consultez les événements qui nécessitent une intervention et relancez leur livraison.</p>
+          </div>
+          <div class="health-card" id="health-card"><span class="health-dot"></span><span id="health-message">Connexion à l’API...</span></div>
+        </section>
+
+        <section class="summary-row" aria-label="Résumé">
+          <div class="summary-card"><span class="summary-label">Dead letters</span><strong id="dead-letter-count">—</strong><span class="summary-note">événements à traiter</span></div>
+          <div class="summary-card"><span class="summary-label">Source des données</span><strong>API Relay</strong><span class="summary-note">données en temps réel</span></div>
+        </section>
+
+        <section class="workspace">
+          <div class="section-heading">
+            <div><h2>Dead letters</h2><p>Événements dont les tentatives de livraison ont été épuisées.</p></div>
+            <button class="button secondary" id="reload-button">Actualiser</button>
+          </div>
+          <div class="feedback" id="feedback" role="status" hidden></div>
+          <div class="empty-state" id="empty-state" hidden>
+            <span class="empty-icon">✓</span><h3>Aucune dead letter</h3><p>Les événements en échec définitif apparaîtront ici.</p>
+          </div>
+          <div class="loading" id="loading">Chargement des dead letters...</div>
+          <div class="table-container" id="dead-letter-table" hidden>
+            <table>
+              <thead><tr><th>EVENT ID</th><th>RAISON</th><th class="action-heading">ACTION</th></tr></thead>
+              <tbody id="dead-letter-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="workspace attempts-section">
+          <div class="section-heading">
+            <div><h2>Historique des tentatives</h2><p>Consultez le détail d’un événement à partir de son identifiant.</p></div>
+          </div>
+          <form class="lookup-form" id="attempt-form">
+            <label for="event-id">Identifiant de l’événement</label>
+            <div class="input-row"><input id="event-id" name="eventId" placeholder="ex. evt_123" autocomplete="off" required /><button class="button primary" type="submit">Afficher les tentatives</button></div>
+          </form>
+          <div class="attempts-feedback" id="attempts-feedback" hidden></div>
+          <div class="table-container" id="attempts-table" hidden>
+            <table>
+              <thead><tr><th>DATE</th><th>TENTATIVE</th><th>STATUT</th><th>HTTP</th><th>DURÉE</th><th>ERREUR</th></tr></thead>
+              <tbody id="attempt-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+      <footer><span>Relay</span><span id="api-url"></span></footer>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -31,6 +31,14 @@ services:
         sync: false
       - key: DELIVERY_URL
         sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  - type: web
+    name: relay-dashboard
+    runtime: static
+    buildCommand: echo "Static frontend ready"
+    staticPublishPath: ./frontend
 
   - type: web
     name: relay-receiver
