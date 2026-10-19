@@ -206,3 +206,11 @@ https://<dashboard-service>.onrender.com/?api=https://<api-service>.onrender.com
 `FRONTEND_URL` must match the dashboard origin exactly (without a trailing slash)
 so that the browser can call the API. For a custom frontend domain, use that
 domain instead. The backend keeps CORS disabled when `FRONTEND_URL` is unset.
+
+
+---
+
+<p align="center">
+  <img src="/frontend/img/relay_OpenGraph_banner.png" alt="Relay - Event-Driven Webhook Engine" width="100%">
+</p>
+
