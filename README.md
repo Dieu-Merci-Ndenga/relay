@@ -101,20 +101,12 @@ GET /health
 
 ## Frontend console
 
-Une console frontend autonome est disponible dans [`frontend/`](frontend/). Elle
-propose une vue de supervision responsive pour les événements, les endpoints et
-les dead letters, sans modifier la logique backend.
+A standalone frontend console is available in [`frontend/`](frontend/). It provides a responsive monitoring view for events, endpoints, and dead letters, without modifying the backend logic.
 
-La console en ligne est accessible ici :
+The online console is accessible here:
 [relay-dashboard-nrqs.onrender.com](https://relay-dashboard-nrqs.onrender.com/).
 
-Pour la prévisualiser localement, démarrez l’API puis servez le dossier avec
-n’importe quel serveur statique (par exemple `npx serve frontend`). Par défaut,
-elle appelle l’API sur la même origine. Si elle est servie sur une autre origine,
-précisez l’URL de l’API avec le paramètre `?api=https://relay-api.example.com`
-(l’API devra autoriser cette origine via CORS). La console utilise uniquement les
-endpoints existants `/health`, `/dead-letters`, `/events/:eventId/attempts` et
-`/events/:eventId/retry`.
+To preview it locally, start the API and then serve the directory with any static server (for example `npx serve frontend`). By default, it calls the API on the same origin. If served on a different origin, specify the API URL using the `?api=https://relay-api.example.com` query parameter (the API must allow this origin via CORS). The console strictly uses existing endpoints: `/health`, `/dead-letters`, `/events/:eventId/attempts`, and `/events/:eventId/retry`.
 
 ## Local Development
 
