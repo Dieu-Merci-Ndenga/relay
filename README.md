@@ -211,6 +211,8 @@ domain instead. The backend keeps CORS disabled when `FRONTEND_URL` is unset.
 ---
 
 <p align="center">
-  <img src="/frontend/img/relay_OpenGraph_banner.png" alt="Relay - Event-Driven Webhook Engine" width="100%">
+	<a href="https://relay-dashboard-nrqs.onrender.com/">
+    	<img src="/frontend/img/relay_OpenGraph_banner.png" alt="Relay - Event-Driven Webhook Engine" width="100%">
+	</a>
 </p>
 
