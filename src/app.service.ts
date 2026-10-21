@@ -34,7 +34,10 @@ export class AppService {
   async acceptEvent(event: WebhookEvent) {
     const duplicate = !(await this.eventStore.saveIfNew(event));
 
-    if (!duplicate) {
+    if (
+      !duplicate ||
+      !(await this.eventStore.hasSuccessfulDelivery(event.eventId))
+    ) {
       await this.deliveryQueue.enqueue(event);
     }
 
@@ -54,7 +57,10 @@ export class AppService {
       throw new NotFoundException('Event is not in the dead-letter queue');
     }
 
-    await this.deliveryQueue.enqueue(event, `manual-retry:${eventId}:${Date.now()}`);
+    await this.deliveryQueue.enqueue(
+      event,
+      `manual-retry-${eventId}-${Date.now()}`,
+    );
 
     return {
       eventId,

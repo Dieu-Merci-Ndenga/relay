@@ -25,6 +25,13 @@ export class InMemoryEventStore implements EventStore {
     return this.events.get(eventId);
   }
 
+  async hasSuccessfulDelivery(eventId: string): Promise<boolean> {
+    return this.attempts.some(
+      (attempt) =>
+        attempt.eventId === eventId && attempt.status === 'delivered',
+    );
+  }
+
   async recordAttempt(attempt: DeliveryAttempt): Promise<void> {
     this.attempts.push({
       ...attempt,
@@ -48,7 +55,9 @@ export class InMemoryEventStore implements EventStore {
   }
 
   async clearDeadLetter(eventId: string): Promise<void> {
-    const index = this.deadLetters.findIndex((item) => item.eventId === eventId);
+    const index = this.deadLetters.findIndex(
+      (item) => item.eventId === eventId,
+    );
     if (index >= 0) {
       this.deadLetters.splice(index, 1);
     }
