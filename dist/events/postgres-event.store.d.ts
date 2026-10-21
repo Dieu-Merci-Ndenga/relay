@@ -6,6 +6,7 @@ export declare class PostgresEventStore implements EventStore, OnModuleDestroy {
     saveIfNew(event: WebhookEvent): Promise<boolean>;
     recordAttempt(attempt: DeliveryAttempt): Promise<void>;
     getEvent(eventId: string): Promise<WebhookEvent | undefined>;
+    hasSuccessfulDelivery(eventId: string): Promise<boolean>;
     markDeadLetter(deadLetter: DeadLetter): Promise<void>;
     getDeadLetter(eventId: string): Promise<DeadLetter | undefined>;
     clearDeadLetter(eventId: string): Promise<void>;
