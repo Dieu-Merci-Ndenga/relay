@@ -23,6 +23,7 @@ export type DeadLetter = {
 
 export interface EventStore {
   saveIfNew(event: WebhookEvent): Promise<boolean>;
+  hasSuccessfulDelivery(eventId: string): Promise<boolean>;
   getEvent(eventId: string): Promise<WebhookEvent | undefined>;
   recordAttempt(attempt: DeliveryAttempt): Promise<void>;
   markDeadLetter(deadLetter: DeadLetter): Promise<void>;

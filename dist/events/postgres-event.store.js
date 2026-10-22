@@ -48,6 +48,16 @@ let PostgresEventStore = class PostgresEventStore {
             ? { eventId: row.event_id, source: row.source, payload: row.payload }
             : undefined;
     }
+    async hasSuccessfulDelivery(eventId) {
+        await this.ensureSchema();
+        const result = await this.pool.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM delivery_attempts
+          WHERE event_id = $1 AND status = 'delivered'
+        ) AS delivered
+      `, [eventId]);
+        return result.rows[0].delivered;
+    }
     async markDeadLetter(deadLetter) {
         await this.ensureSchema();
         await this.pool.query(`

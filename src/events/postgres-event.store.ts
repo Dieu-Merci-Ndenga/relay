@@ -63,6 +63,20 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       : undefined;
   }
 
+  async hasSuccessfulDelivery(eventId: string): Promise<boolean> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      `
+        SELECT EXISTS (
+          SELECT 1 FROM delivery_attempts
+          WHERE event_id = $1 AND status = 'delivered'
+        ) AS delivered
+      `,
+      [eventId],
+    );
+    return result.rows[0].delivered;
+  }
+
   async markDeadLetter(deadLetter: DeadLetter): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
@@ -131,7 +145,8 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
 
   private ensureSchema(): Promise<void> {
     this.schemaReady ??= this.pool
-      .query(`
+      .query(
+        `
         CREATE TABLE IF NOT EXISTS webhook_events (
           event_id TEXT PRIMARY KEY,
           source TEXT NOT NULL,
@@ -155,7 +170,8 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           reason TEXT NOT NULL,
           failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `)
+      `,
+      )
       .then(() => undefined);
 
     return this.schemaReady;
