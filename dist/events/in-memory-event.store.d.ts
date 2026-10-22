@@ -5,6 +5,7 @@ export declare class InMemoryEventStore implements EventStore {
     readonly deadLetters: DeadLetter[];
     saveIfNew(event: WebhookEvent): Promise<boolean>;
     getEvent(eventId: string): Promise<WebhookEvent | undefined>;
+    hasSuccessfulDelivery(eventId: string): Promise<boolean>;
     recordAttempt(attempt: DeliveryAttempt): Promise<void>;
     markDeadLetter(deadLetter: DeadLetter): Promise<void>;
     getDeadLetter(eventId: string): Promise<DeadLetter | undefined>;

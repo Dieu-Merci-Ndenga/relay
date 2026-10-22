@@ -37,6 +37,7 @@ describe('AppController', () => {
 
     it('accepts a signed event and reports duplicates', async () => {
       const request = { rawBody, body: payload } as never;
+      const enqueue = jest.spyOn(deliveryQueue, 'enqueue');
 
       await expect(
         appController.receiveWebhook('stripe', 'evt_123', signature, request),
@@ -44,7 +45,61 @@ describe('AppController', () => {
       await expect(
         appController.receiveWebhook('stripe', 'evt_123', signature, request),
       ).resolves.toMatchObject({ accepted: true, duplicate: true });
+      expect(enqueue).toHaveBeenCalledTimes(2);
       expect(deliveryQueue.jobs).toHaveLength(1);
+    });
+
+    it('retries queue insertion after a transient failure', async () => {
+      const request = { rawBody, body: payload } as never;
+      const enqueue = jest
+        .spyOn(deliveryQueue, 'enqueue')
+        .mockRejectedValueOnce(new Error('Redis unavailable'));
+
+      await expect(
+        appController.receiveWebhook(
+          'stripe',
+          'evt_retry_enqueue',
+          signature,
+          request,
+        ),
+      ).rejects.toThrow('Redis unavailable');
+      await expect(
+        appController.receiveWebhook(
+          'stripe',
+          'evt_retry_enqueue',
+          signature,
+          request,
+        ),
+      ).resolves.toMatchObject({ accepted: true, duplicate: true });
+
+      expect(enqueue).toHaveBeenCalledTimes(2);
+      expect(deliveryQueue.jobs).toHaveLength(1);
+    });
+
+    it('does not requeue an event that has already been delivered', async () => {
+      const request = { rawBody, body: payload } as never;
+      await eventStore.saveIfNew({
+        eventId: 'evt_delivered',
+        source: 'stripe',
+        payload,
+      });
+      await eventStore.recordAttempt({
+        eventId: 'evt_delivered',
+        attemptNumber: 1,
+        status: 'delivered',
+        httpStatus: 200,
+        durationMs: 42,
+      });
+
+      await expect(
+        appController.receiveWebhook(
+          'stripe',
+          'evt_delivered',
+          signature,
+          request,
+        ),
+      ).resolves.toMatchObject({ accepted: true, duplicate: true });
+      expect(deliveryQueue.jobs).toHaveLength(0);
     });
 
     it('rejects an invalid signature', async () => {

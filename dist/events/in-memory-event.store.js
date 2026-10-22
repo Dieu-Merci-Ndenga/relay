@@ -22,6 +22,9 @@ let InMemoryEventStore = class InMemoryEventStore {
     async getEvent(eventId) {
         return this.events.get(eventId);
     }
+    async hasSuccessfulDelivery(eventId) {
+        return this.attempts.some((attempt) => attempt.eventId === eventId && attempt.status === 'delivered');
+    }
     async recordAttempt(attempt) {
         this.attempts.push({
             ...attempt,
