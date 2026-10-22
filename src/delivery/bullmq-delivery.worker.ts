@@ -1,83 +1,91 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Worker } from 'bullmq';
+import { Job, Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { DeliveryJob } from './delivery-queue';
+import { QUEUE_NAME, RETRY_QUEUE_NAME } from './bullmq-delivery.queue';
+import { DeliveryProcessor, RetryScheduler } from './delivery-processor';
 import type { EventStore } from '../events/event-store';
+import { MetricsService } from '../metrics/metrics.service';
 
-const QUEUE_NAME = 'relay-deliveries';
+const intFromEnv = (name: string, fallback: number): number => {
+  const value = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
 
 @Injectable()
-export class BullMqDeliveryWorker implements OnModuleInit, OnModuleDestroy {
+export class BullMqDeliveryWorker
+  implements OnModuleInit, OnModuleDestroy, RetryScheduler
+{
   private readonly connection = new IORedis(
     process.env.REDIS_URL ?? 'redis://localhost:6379',
     { maxRetriesPerRequest: null },
   );
-  private worker?: Worker<DeliveryJob>;
+  private readonly retryQueue = new Queue<DeliveryJob>(RETRY_QUEUE_NAME, {
+    connection: this.connection,
+    defaultJobOptions: { removeOnComplete: 1000, removeOnFail: false },
+  });
+  private workers: Worker<DeliveryJob>[] = [];
 
-  constructor(private readonly eventStore: EventStore) {}
+  constructor(
+    private readonly eventStore: EventStore,
+    private readonly metrics: MetricsService,
+  ) {}
+
+  async scheduleRetry(
+    job: DeliveryJob,
+    jobId: string,
+    delayMs: number,
+  ): Promise<void> {
+    await this.retryQueue.add(`event:${job.eventId}`, job, {
+      jobId,
+      delay: delayMs,
+    });
+  }
 
   onModuleInit(): void {
-    const deliveryUrl = process.env.DELIVERY_URL;
+    const url = process.env.DELIVERY_URL;
 
-    if (!deliveryUrl) {
+    if (!url) {
       return;
     }
 
-    this.worker = new Worker<DeliveryJob>(
-      QUEUE_NAME,
-      async (job) => {
-        const startedAt = Date.now();
-        const attemptNumber = job.attemptsMade + 1;
-
-        try {
-          const response = await fetch(deliveryUrl, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'x-relay-event-id': job.data.eventId,
-              'x-relay-source': job.data.source,
-            },
-            body: JSON.stringify(job.data.payload),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Delivery failed with HTTP ${response.status}`);
-          }
-
-          await this.eventStore.recordAttempt({
-            eventId: job.data.eventId,
-            attemptNumber,
-            status: 'delivered',
-            httpStatus: response.status,
-            durationMs: Date.now() - startedAt,
-          });
-          await this.eventStore.clearDeadLetter(job.data.eventId);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          await this.eventStore.recordAttempt({
-            eventId: job.data.eventId,
-            attemptNumber,
-            status: 'failed',
-            error: reason,
-            durationMs: Date.now() - startedAt,
-          });
-
-          if (attemptNumber >= (job.opts.attempts ?? 1)) {
-            await this.eventStore.markDeadLetter({
-              eventId: job.data.eventId,
-              reason,
-            });
-          }
-
-          throw error;
-        }
+    const processor = new DeliveryProcessor(
+      this.eventStore,
+      this,
+      this.metrics,
+      {
+        url,
+        secret:
+          process.env.DELIVERY_SECRET ??
+          process.env.WEBHOOK_SECRET ??
+          'dev-secret',
+        maxAttempts: intFromEnv('DELIVERY_MAX_ATTEMPTS', 5),
+        backoffBaseMs: intFromEnv('DELIVERY_BACKOFF_MS', 1000),
       },
-      { connection: this.connection, concurrency: 10 },
     );
+    const handle = (job: Job<DeliveryJob>) =>
+      processor.process(job.data, {
+        jobId: job.id ?? '',
+        queueLagMs:
+          (job.processedOn ?? Date.now()) -
+          (job.timestamp + (job.opts.delay ?? 0)),
+      });
+
+    this.workers = [
+      new Worker<DeliveryJob>(QUEUE_NAME, handle, {
+        connection: this.connection,
+        concurrency: intFromEnv('DELIVERY_CONCURRENCY', 10),
+      }),
+      new Worker<DeliveryJob>(RETRY_QUEUE_NAME, handle, {
+        connection: this.connection,
+        concurrency: intFromEnv('RETRY_CONCURRENCY', 5),
+      }),
+    ];
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.worker?.close();
+    await Promise.all(this.workers.map((worker) => worker.close()));
+    await this.retryQueue.close();
     await this.connection.quit();
   }
 }

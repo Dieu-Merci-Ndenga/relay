@@ -47,7 +47,7 @@
           <div class="loading" id="loading">Loading dead letters...</div>
           <div class="table-container" id="dead-letter-table" hidden>
             <table>
-              <thead><tr><th>EVENT ID</th><th>REASON</th><th class="action-heading">ACTION</th></tr></thead>
+              <thead><tr><th>SOURCE</th><th>EVENT ID</th><th>REASON</th><th class="action-heading">ACTION</th></tr></thead>
               <tbody id="dead-letter-rows"></tbody>
             </table>
           </div>
@@ -59,7 +59,7 @@
           </div>
           <form class="lookup-form" id="attempt-form">
             <label for="event-id">Event ID</label>
-            <div class="input-row"><input id="event-id" name="eventId" placeholder="e.g. evt_123" autocomplete="off" required /><button class="button primary" type="submit">View attempts</button></div>
+            <div class="input-row"><input id="event-source" name="source" placeholder="source (optional, e.g. stripe)" autocomplete="off" /><input id="event-id" name="eventId" placeholder="e.g. evt_123" autocomplete="off" required /><button class="button primary" type="submit">View attempts</button></div>
           </form>
           <div class="attempts-feedback" id="attempts-feedback" hidden></div>
           <div class="table-container" id="attempts-table" hidden>

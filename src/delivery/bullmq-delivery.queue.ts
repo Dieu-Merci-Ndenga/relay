@@ -1,9 +1,10 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { DeliveryJob, DeliveryQueue } from './delivery-queue';
+import { DeliveryJob, DeliveryQueue, deliveryJobId } from './delivery-queue';
 
-const QUEUE_NAME = 'relay-deliveries';
+export const QUEUE_NAME = 'relay-deliveries';
+export const RETRY_QUEUE_NAME = 'relay-retries';
 
 @Injectable()
 export class BullMqDeliveryQueue implements DeliveryQueue, OnModuleDestroy {
@@ -11,11 +12,11 @@ export class BullMqDeliveryQueue implements DeliveryQueue, OnModuleDestroy {
     process.env.REDIS_URL ?? 'redis://localhost:6379',
     { maxRetriesPerRequest: null },
   );
+  // Retries are not handled by BullMQ's own attempts: the worker schedules
+  // them on a separate queue, so late retries never delay new events.
   private readonly queue = new Queue<DeliveryJob>(QUEUE_NAME, {
     connection: this.connection,
     defaultJobOptions: {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 1000 },
       removeOnComplete: 1000,
       removeOnFail: false,
     },
@@ -23,7 +24,7 @@ export class BullMqDeliveryQueue implements DeliveryQueue, OnModuleDestroy {
 
   async enqueue(job: DeliveryJob, jobId?: string): Promise<void> {
     await this.queue.add(`event:${job.eventId}`, job, {
-      jobId: jobId ?? job.eventId,
+      jobId: jobId ?? deliveryJobId(job.source, job.eventId),
     });
   }
 

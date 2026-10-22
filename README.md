@@ -78,8 +78,13 @@ x-relay-signature: <HMAC-SHA256 hex digest>
 ### Inspect delivery attempts
 
 ```text
-GET /events/:eventId/attempts
+GET /events/:source/:eventId/attempts
 ```
+
+Event IDs are scoped per source: the same `x-relay-event-id` may be used by two
+different sources without collision. The legacy `GET /events/:eventId/attempts`
+and `POST /events/:eventId/retry` routes still work, but answer `409` when the
+ID exists under several sources.
 
 ### Inspect the dead-letter queue
 
@@ -90,8 +95,42 @@ GET /dead-letters
 ### Retry a dead-lettered event
 
 ```text
-POST /events/:eventId/retry
+POST /events/:source/:eventId/retry
 ```
+
+### Metrics
+
+```text
+GET /metrics
+```
+
+Prometheus metrics: events received, delivery attempts and durations, queue lag
+(first attempts vs retries), dead letters, and the outbox backlog. If
+`METRICS_TOKEN` is set, send `Authorization: Bearer <token>`.
+
+### Outbound delivery
+
+Each delivery is a `POST` of the JSON payload to `DELIVERY_URL` with:
+
+```text
+x-relay-signature: <HMAC-SHA256 hex digest of the body, key DELIVERY_SECRET>
+x-relay-event-id: evt_123
+x-relay-source: stripe
+```
+
+`DELIVERY_SECRET` falls back to `WEBHOOK_SECRET`.
+
+### Reliability internals
+
+- **Outbox:** events are stored in PostgreSQL before being queued and marked
+  `enqueued_at` once queued. A sweeper re-enqueues events left unqueued (crash
+  or Redis outage) after `OUTBOX_GRACE_MS`, every `OUTBOX_SWEEP_INTERVAL_MS`.
+- **Retry queue:** first attempts run on `relay-deliveries`, retries on a
+  separate delayed `relay-retries` queue, so a failing receiver never delays
+  new events. Tunables: `DELIVERY_MAX_ATTEMPTS` (5), `DELIVERY_BACKOFF_MS`
+  (1000), `DELIVERY_CONCURRENCY` (10), `RETRY_CONCURRENCY` (5).
+- **Schema migration:** existing databases are migrated automatically and
+  idempotently at startup (composite `(source, event_id)` keys).
 
 ### Health check
 
@@ -106,7 +145,7 @@ A standalone frontend console is available in [`frontend/`](frontend/). It provi
 The online console is accessible here:
 [relay-dashboard-nrqs.onrender.com](https://relay-dashboard-nrqs.onrender.com/).
 
-To preview it locally, start the API and then serve the directory with any static server (for example `npx serve frontend`). By default, it calls the API on the same origin. If served on a different origin, specify the API URL using the `?api=https://relay-api.example.com` query parameter (the API must allow this origin via CORS). The console strictly uses existing endpoints: `/health`, `/dead-letters`, `/events/:eventId/attempts`, and `/events/:eventId/retry`.
+To preview it locally, start the API and then serve the directory with any static server (for example `npx serve frontend`). By default, it calls the API on the same origin. If served on a different origin, specify the API URL using the `?api=https://relay-api.example.com` query parameter (the API must allow this origin via CORS). The console strictly uses existing endpoints: `/health`, `/dead-letters`, `/events/:source/:eventId/attempts`, and `/events/:source/:eventId/retry`.
 
 ## Local Development
 
