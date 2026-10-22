@@ -6,6 +6,7 @@ export type DeliveryConfig = {
     secret: string;
     maxAttempts: number;
     backoffBaseMs: number;
+    timeoutMs?: number;
 };
 export interface RetryScheduler {
     scheduleRetry(job: DeliveryJob, jobId: string, delayMs: number): Promise<void>;

@@ -18,11 +18,12 @@ const event_store_1 = require("./events/event-store");
 const delivery_queue_1 = require("./delivery/delivery-queue");
 const metrics_service_1 = require("./metrics/metrics.service");
 const signature_1 = require("./signature");
+const secrets_1 = require("./config/secrets");
 let AppService = class AppService {
     eventStore;
     deliveryQueue;
     metrics;
-    secret = process.env.WEBHOOK_SECRET ?? 'dev-secret';
+    secret = (0, secrets_1.webhookSecret)();
     constructor(eventStore, deliveryQueue, metrics) {
         this.eventStore = eventStore;
         this.deliveryQueue = deliveryQueue;

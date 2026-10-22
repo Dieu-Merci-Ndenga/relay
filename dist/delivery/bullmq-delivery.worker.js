@@ -18,6 +18,7 @@ const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
 const bullmq_delivery_queue_1 = require("./bullmq-delivery.queue");
 const delivery_processor_1 = require("./delivery-processor");
+const secrets_1 = require("../config/secrets");
 const metrics_service_1 = require("../metrics/metrics.service");
 const intFromEnv = (name, fallback) => {
     const value = Number.parseInt(process.env[name] ?? '', 10);
@@ -49,11 +50,10 @@ let BullMqDeliveryWorker = class BullMqDeliveryWorker {
         }
         const processor = new delivery_processor_1.DeliveryProcessor(this.eventStore, this, this.metrics, {
             url,
-            secret: process.env.DELIVERY_SECRET ??
-                process.env.WEBHOOK_SECRET ??
-                'dev-secret',
+            secret: (0, secrets_1.deliverySecret)(),
             maxAttempts: intFromEnv('DELIVERY_MAX_ATTEMPTS', 5),
             backoffBaseMs: intFromEnv('DELIVERY_BACKOFF_MS', 1000),
+            timeoutMs: intFromEnv('DELIVERY_TIMEOUT_MS', 10_000),
         });
         const handle = (job) => processor.process(job.data, {
             jobId: job.id ?? '',

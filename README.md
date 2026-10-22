@@ -20,8 +20,11 @@ Relay is designed around **at-least-once delivery** and explicit idempotency. Ex
 
 - HMAC-SHA256 signature validation using the raw request body.
 - Persistent event storage in PostgreSQL.
-- Idempotent event ingestion with a unique external event ID.
-- Asynchronous delivery through Redis and BullMQ.
+- Idempotent event ingestion with a unique event ID per source.
+- Transactional outbox with a sweeper that recovers events lost before queueing.
+- Signed outbound deliveries (HMAC-SHA256) with timeout and no redirects.
+- Asynchronous delivery through Redis and BullMQ, with a dedicated retry queue.
+- Prometheus metrics on `/metrics`.
 - Exponential backoff with up to five delivery attempts.
 - Delivery history including status, HTTP status, error, duration, and timestamp.
 - Dead-letter queue after the retry policy is exhausted.
@@ -137,6 +140,26 @@ x-relay-source: stripe
 ```text
 GET /health
 ```
+
+## Security
+
+- **Inbound:** HMAC-SHA256 over the raw body, compared in constant time.
+  `source` and `x-relay-event-id` are validated (1-128 chars of
+  `[A-Za-z0-9_.:@+=-]`) before reaching the database, queue or logs.
+- **Outbound:** every delivery is signed (`x-relay-signature`), has a timeout
+  (`DELIVERY_TIMEOUT_MS`, default 10000) and never follows redirects, so a
+  receiver cannot stall a worker or bounce a signed payload to another host.
+- **Secrets:** with `NODE_ENV=production`, the API refuses to start if
+  `WEBHOOK_SECRET` (or `DELIVERY_SECRET`) is missing or equals the dev default.
+- **Metrics:** `/metrics` can be protected with `METRICS_TOKEN` (constant-time
+  comparison).
+- **Headers:** `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` and `Cache-Control: no-store` are set; `X-Powered-By` is
+  removed. CORS stays disabled unless `FRONTEND_URL` is set.
+- **Known limitation:** `/dead-letters`, `/events/...` and the retry route are
+  unauthenticated, as the dashboard calls them directly. Put them behind a
+  gateway or network policy when exposing the API publicly.
+- `npm audit --omit=dev` reports no known vulnerabilities.
 
 ## Frontend console
 

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AppService } from './app.service';
+import { isValidId } from './config/secrets';
 import { MetricsService } from './metrics/metrics.service';
 import { safeEqual } from './signature';
 
@@ -51,6 +52,12 @@ export class AppController {
   ) {
     if (!eventId) {
       throw new BadRequestException('x-relay-event-id is required');
+    }
+
+    if (!isValidId(eventId) || !isValidId(source)) {
+      throw new BadRequestException(
+        'source and x-relay-event-id must be 1-128 characters of [A-Za-z0-9_.:@+=-]',
+      );
     }
 
     if (
