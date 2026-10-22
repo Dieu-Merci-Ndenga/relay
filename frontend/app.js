@@ -20,8 +20,10 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
 }
 
-async function request(path, options) {
-  const response = await fetch(`${apiBase}${path}`, options);
+async function request(path, options = {}) {
+  const token = sessionStorage.getItem("relayAdminToken");
+  const headers = { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const response = await fetch(`${apiBase}${path}`, { ...options, headers });
   let body;
   try { body = await response.json(); } catch { body = null; }
   if (!response.ok) throw new Error(body?.message || `The request failed (${response.status})`);
@@ -135,6 +137,12 @@ function escapeHtml(value) {
 
 $("#attempt-form").addEventListener("submit", loadAttempts);
 $("#refresh-button").addEventListener("click", () => { checkHealth(); loadDeadLetters(); });
+$("#admin-token").value = sessionStorage.getItem("relayAdminToken") || "";
+$("#token-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  sessionStorage.setItem("relayAdminToken", $("#admin-token").value.trim());
+  loadDeadLetters();
+});
 $("#reload-button").addEventListener("click", loadDeadLetters);
 $("#api-url").textContent = apiBase;
 checkHealth();

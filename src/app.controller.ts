@@ -8,8 +8,10 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { AdminGuard } from './admin.guard';
 import { AppService } from './app.service';
 import { isValidId } from './config/secrets';
 import { MetricsService } from './metrics/metrics.service';
@@ -74,6 +76,7 @@ export class AppController {
     });
   }
 
+  @UseGuards(AdminGuard)
   @Get('events/:source/:eventId/attempts')
   getAttempts(
     @Param('source') source: string,
@@ -82,6 +85,7 @@ export class AppController {
     return this.appService.getAttempts({ source, eventId });
   }
 
+  @UseGuards(AdminGuard)
   @Post('events/:source/:eventId/retry')
   retryEvent(
     @Param('source') source: string,
@@ -91,11 +95,13 @@ export class AppController {
   }
 
   // Legacy routes: only valid while the event id is unique across sources.
+  @UseGuards(AdminGuard)
   @Get('events/:eventId/attempts')
   getAttemptsByEventId(@Param('eventId') eventId: string) {
     return this.appService.getAttemptsByEventId(eventId);
   }
 
+  @UseGuards(AdminGuard)
   @Post('events/:eventId/retry')
   async retryEventByEventId(@Param('eventId') eventId: string) {
     return this.appService.retryEvent(
@@ -103,6 +109,7 @@ export class AppController {
     );
   }
 
+  @UseGuards(AdminGuard)
   @Get('dead-letters')
   getDeadLetters() {
     return this.appService.listDeadLetters();
