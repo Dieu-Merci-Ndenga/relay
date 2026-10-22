@@ -236,7 +236,58 @@ The demo receiver is intentionally open for failure simulation and is not intend
 npm test -- --runInBand
 npm run test:e2e -- --runInBand
 npm run build
+npm run lint
 ```
+
+Coverage at the time of writing: 22 unit tests (signatures, ids, secrets,
+admin guard, source-scoped events, outbox sweeper, delivery processor and
+retry scheduling, metrics auth, issue #5 regressions) and 2 end-to-end tests.
+The unit tests run against the in-memory store and queue
+(`NODE_ENV=test`); the PostgreSQL store, the schema migration and the BullMQ
+queues are not covered by automated tests. They were verified manually
+against PostgreSQL 16 and Redis 7: legacy-schema migration, outbox recovery,
+retry queue, dead letter and manual retry, outbound signature, `/metrics`
+and the admin token.
+
+## Limitations
+
+Relay is a single-tenant webhook relay, not a full webhook platform.
+
+- **One destination:** all events go to a single `DELIVERY_URL` with one
+  secret. There are no per-source endpoints, subscriptions, event types or
+  filtering.
+- **No multi-tenancy:** no organizations, applications or per-client API
+  keys. Operator access is one shared `ADMIN_TOKEN`, without roles or users.
+- **At-least-once delivery:** the outbox and retries can deliver an event more
+  than once in rare cases (for example a crash after the receiver answered).
+  Receivers should deduplicate on `x-relay-event-id` and `x-relay-source`.
+- **Limited attempt history:** only status, HTTP status, error and duration are
+  stored, not the receiver's response body or headers.
+- **One global retry policy:** no per-endpoint settings, no automatic
+  disabling of an endpoint that keeps failing, and no alerting. Use the
+  metrics for alerts.
+- **Operator routes:** protected by a bearer token only; the dashboard keeps it
+  in `sessionStorage`. Serve everything over HTTPS.
+- **Not load tested:** throughput and scaling limits are unknown.
+- **Redis job format:** jobs queued before the source-scoped job ids were
+  introduced do not deduplicate against new ones.
+- **Young project:** it has had much less production exposure than
+  established tools such as [hook0](https://github.com/hook0/hook0), which
+  inspired some of its design.
+
+## Changelog
+
+### Unreleased
+
+- **Reliability:** transactional outbox with sweeper, separate retry queue,
+  source-scoped event ids (automatic schema migration), duplicate webhooks
+  re-enqueued unless already delivered (issue #5).
+- **Delivery:** signed outbound requests, timeout, no redirects.
+- **Observability:** Prometheus `/metrics`.
+- **Security:** production secrets enforced, id validation, security headers,
+  `ADMIN_TOKEN` on operator routes.
+- **API:** responses include `source`; new `/events/:source/:eventId/...`
+  routes, legacy routes return 409 on ambiguous ids.
 
 ## Deployment on Render
 
