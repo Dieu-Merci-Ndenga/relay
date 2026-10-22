@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppController = void 0;
 const common_1 = require("@nestjs/common");
 const app_service_1 = require("./app.service");
+const secrets_1 = require("./config/secrets");
 const metrics_service_1 = require("./metrics/metrics.service");
 const signature_1 = require("./signature");
 let AppController = class AppController {
@@ -38,6 +39,9 @@ let AppController = class AppController {
     async receiveWebhook(source, eventId, signature, request) {
         if (!eventId) {
             throw new common_1.BadRequestException('x-relay-event-id is required');
+        }
+        if (!(0, secrets_1.isValidId)(eventId) || !(0, secrets_1.isValidId)(source)) {
+            throw new common_1.BadRequestException('source and x-relay-event-id must be 1-128 characters of [A-Za-z0-9_.:@+=-]');
         }
         if (!signature ||
             !this.appService.verifySignature(request.rawBody, signature)) {

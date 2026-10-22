@@ -10,10 +10,11 @@ import { DELIVERY_QUEUE, manualRetryJobId } from './delivery/delivery-queue';
 import type { DeliveryQueue } from './delivery/delivery-queue';
 import { MetricsService } from './metrics/metrics.service';
 import { isValidSignature } from './signature';
+import { webhookSecret } from './config/secrets';
 
 @Injectable()
 export class AppService {
-  private readonly secret = process.env.WEBHOOK_SECRET ?? 'dev-secret';
+  private readonly secret = webhookSecret();
 
   constructor(
     @Inject(EVENT_STORE) private readonly eventStore: EventStore,

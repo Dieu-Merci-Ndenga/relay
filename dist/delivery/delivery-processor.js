@@ -41,6 +41,8 @@ class DeliveryProcessor {
                     'x-relay-signature': (0, signature_1.signPayload)(body, this.config.secret),
                 },
                 body,
+                redirect: 'manual',
+                signal: AbortSignal.timeout(this.config.timeoutMs ?? 10_000),
             });
             httpStatus = response.status;
             if (!response.ok) {

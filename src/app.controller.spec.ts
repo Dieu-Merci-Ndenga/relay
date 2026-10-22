@@ -1,6 +1,10 @@
 import { createHmac } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { EVENT_STORE } from './events/event-store';
@@ -103,6 +107,27 @@ describe('AppController', () => {
         ),
       ).resolves.toMatchObject({ accepted: true, duplicate: true });
       expect(deliveryQueue.jobs).toHaveLength(0);
+    });
+
+    it('rejects malformed source or event ids', async () => {
+      const request = { rawBody, body: payload } as never;
+
+      await expect(
+        appController.receiveWebhook(
+          'stripe',
+          'bad id\r\n',
+          signature,
+          request,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        appController.receiveWebhook(
+          'a'.repeat(200),
+          'evt_1',
+          signature,
+          request,
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects an invalid signature', async () => {

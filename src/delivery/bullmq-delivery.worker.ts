@@ -5,6 +5,7 @@ import { DeliveryJob } from './delivery-queue';
 import { QUEUE_NAME, RETRY_QUEUE_NAME } from './bullmq-delivery.queue';
 import { DeliveryProcessor, RetryScheduler } from './delivery-processor';
 import type { EventStore } from '../events/event-store';
+import { deliverySecret } from '../config/secrets';
 import { MetricsService } from '../metrics/metrics.service';
 
 const intFromEnv = (name: string, fallback: number): number => {
@@ -55,12 +56,10 @@ export class BullMqDeliveryWorker
       this.metrics,
       {
         url,
-        secret:
-          process.env.DELIVERY_SECRET ??
-          process.env.WEBHOOK_SECRET ??
-          'dev-secret',
+        secret: deliverySecret(),
         maxAttempts: intFromEnv('DELIVERY_MAX_ATTEMPTS', 5),
         backoffBaseMs: intFromEnv('DELIVERY_BACKOFF_MS', 1000),
+        timeoutMs: intFromEnv('DELIVERY_TIMEOUT_MS', 10_000),
       },
     );
     const handle = (job: Job<DeliveryJob>) =>

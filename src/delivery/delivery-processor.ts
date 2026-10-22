@@ -9,6 +9,7 @@ export type DeliveryConfig = {
   secret: string;
   maxAttempts: number;
   backoffBaseMs: number;
+  timeoutMs?: number;
 };
 
 export interface RetryScheduler {
@@ -66,6 +67,9 @@ export class DeliveryProcessor {
           'x-relay-signature': signPayload(body, this.config.secret),
         },
         body,
+        // A receiver must not hang a worker or bounce us to another host.
+        redirect: 'manual',
+        signal: AbortSignal.timeout(this.config.timeoutMs ?? 10_000),
       });
       httpStatus = response.status;
 
