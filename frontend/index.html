@@ -36,6 +36,10 @@
         </section>
 
         <section class="workspace">
+          <form class="lookup-form" id="token-form">
+            <label for="admin-token">Admin token</label>
+            <div class="input-row"><input id="admin-token" type="password" placeholder="ADMIN_TOKEN (kept for this tab only)" autocomplete="off" /><button class="button secondary" type="submit">Save</button></div>
+          </form>
           <div class="section-heading">
             <div><h2>Dead letters</h2><p>Events whose delivery attempts have been exhausted.</p></div>
             <button class="button secondary" id="reload-button">Refresh</button>

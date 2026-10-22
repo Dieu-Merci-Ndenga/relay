@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.webhookSecret = webhookSecret;
 exports.deliverySecret = deliverySecret;
 exports.isValidId = isValidId;
+exports.adminToken = adminToken;
 const DEV_SECRET = 'dev-secret';
 function resolve(name, value) {
     if (process.env.NODE_ENV === 'production') {
@@ -21,5 +22,12 @@ function deliverySecret() {
 const ID_PATTERN = /^[\w.:@+=-]{1,128}$/;
 function isValidId(value) {
     return ID_PATTERN.test(value);
+}
+function adminToken() {
+    const token = process.env.ADMIN_TOKEN;
+    if (process.env.NODE_ENV === 'production' && !token) {
+        throw new Error('ADMIN_TOKEN must be set in production');
+    }
+    return token || undefined;
 }
 //# sourceMappingURL=secrets.js.map

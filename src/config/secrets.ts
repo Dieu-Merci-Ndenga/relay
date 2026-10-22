@@ -32,3 +32,15 @@ const ID_PATTERN = /^[\w.:@+=-]{1,128}$/;
 export function isValidId(value: string): boolean {
   return ID_PATTERN.test(value);
 }
+
+// Operator token for the dead-letter, attempts and retry routes. It is
+// mandatory in production; locally, leaving it unset keeps the API open.
+export function adminToken(): string | undefined {
+  const token = process.env.ADMIN_TOKEN;
+
+  if (process.env.NODE_ENV === 'production' && !token) {
+    throw new Error('ADMIN_TOKEN must be set in production');
+  }
+
+  return token || undefined;
+}

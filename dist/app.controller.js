@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppController = void 0;
 const common_1 = require("@nestjs/common");
+const admin_guard_1 = require("./admin.guard");
 const app_service_1 = require("./app.service");
 const secrets_1 = require("./config/secrets");
 const metrics_service_1 = require("./metrics/metrics.service");
@@ -95,6 +96,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AppController.prototype, "receiveWebhook", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     (0, common_1.Get)('events/:source/:eventId/attempts'),
     __param(0, (0, common_1.Param)('source')),
     __param(1, (0, common_1.Param)('eventId')),
@@ -103,6 +105,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AppController.prototype, "getAttempts", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     (0, common_1.Post)('events/:source/:eventId/retry'),
     __param(0, (0, common_1.Param)('source')),
     __param(1, (0, common_1.Param)('eventId')),
@@ -111,6 +114,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AppController.prototype, "retryEvent", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     (0, common_1.Get)('events/:eventId/attempts'),
     __param(0, (0, common_1.Param)('eventId')),
     __metadata("design:type", Function),
@@ -118,6 +122,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AppController.prototype, "getAttemptsByEventId", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     (0, common_1.Post)('events/:eventId/retry'),
     __param(0, (0, common_1.Param)('eventId')),
     __metadata("design:type", Function),
@@ -125,6 +130,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AppController.prototype, "retryEventByEventId", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     (0, common_1.Get)('dead-letters'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
