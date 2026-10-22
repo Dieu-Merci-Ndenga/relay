@@ -9,25 +9,25 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BullMqDeliveryQueue = void 0;
+exports.BullMqDeliveryQueue = exports.RETRY_QUEUE_NAME = exports.QUEUE_NAME = void 0;
 const common_1 = require("@nestjs/common");
 const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
-const QUEUE_NAME = 'relay-deliveries';
+const delivery_queue_1 = require("./delivery-queue");
+exports.QUEUE_NAME = 'relay-deliveries';
+exports.RETRY_QUEUE_NAME = 'relay-retries';
 let BullMqDeliveryQueue = class BullMqDeliveryQueue {
     connection = new ioredis_1.default(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
-    queue = new bullmq_1.Queue(QUEUE_NAME, {
+    queue = new bullmq_1.Queue(exports.QUEUE_NAME, {
         connection: this.connection,
         defaultJobOptions: {
-            attempts: 5,
-            backoff: { type: 'exponential', delay: 1000 },
             removeOnComplete: 1000,
             removeOnFail: false,
         },
     });
     async enqueue(job, jobId) {
         await this.queue.add(`event:${job.eventId}`, job, {
-            jobId: jobId ?? job.eventId,
+            jobId: jobId ?? (0, delivery_queue_1.deliveryJobId)(job.source, job.eventId),
         });
     }
     async onModuleDestroy() {

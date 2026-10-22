@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import {
   DeadLetter,
   DeliveryAttempt,
+  EventKey,
   EventStore,
   WebhookEvent,
 } from './event-store';
@@ -23,7 +24,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       `
         INSERT INTO webhook_events (event_id, source, payload)
         VALUES ($1, $2, $3::jsonb)
-        ON CONFLICT (event_id) DO NOTHING
+        ON CONFLICT (source, event_id) DO NOTHING
         RETURNING event_id
       `,
       [event.eventId, event.source, JSON.stringify(event.payload)],
@@ -32,15 +33,81 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     return result.rowCount === 1;
   }
 
+  async findSources(eventId: string): Promise<string[]> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      'SELECT source FROM webhook_events WHERE event_id = $1 ORDER BY source',
+      [eventId],
+    );
+    return result.rows.map((row) => row.source);
+  }
+
+  async hasSuccessfulDelivery(key: EventKey): Promise<boolean> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      `
+        SELECT EXISTS (
+          SELECT 1 FROM delivery_attempts
+          WHERE source = $1 AND event_id = $2 AND status = 'delivered'
+        ) AS delivered
+      `,
+      [key.source, key.eventId],
+    );
+    return result.rows[0].delivered;
+  }
+
+  async markEnqueued(key: EventKey): Promise<void> {
+    await this.ensureSchema();
+    await this.pool.query(
+      `
+        UPDATE webhook_events SET enqueued_at = NOW()
+        WHERE source = $1 AND event_id = $2 AND enqueued_at IS NULL
+      `,
+      [key.source, key.eventId],
+    );
+  }
+
+  async listPendingEnqueue(
+    olderThanMs: number,
+    limit: number,
+  ): Promise<WebhookEvent[]> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      `
+        SELECT event_id, source, payload
+        FROM webhook_events
+        WHERE enqueued_at IS NULL
+          AND received_at <= NOW() - ($1 * INTERVAL '1 millisecond')
+        ORDER BY received_at ASC
+        LIMIT $2
+      `,
+      [olderThanMs, limit],
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      source: row.source,
+      payload: row.payload,
+    }));
+  }
+
+  async countPendingEnqueue(): Promise<number> {
+    await this.ensureSchema();
+    const result = await this.pool.query(
+      'SELECT COUNT(*)::int AS pending FROM webhook_events WHERE enqueued_at IS NULL',
+    );
+    return result.rows[0].pending;
+  }
+
   async recordAttempt(attempt: DeliveryAttempt): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
       `
         INSERT INTO delivery_attempts
-          (event_id, attempt_number, status, http_status, error, duration_ms)
-        VALUES ($1, $2, $3, $4, $5, $6)
+          (source, event_id, attempt_number, status, http_status, error, duration_ms)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
       `,
       [
+        attempt.source,
         attempt.eventId,
         attempt.attemptNumber,
         attempt.status,
@@ -51,11 +118,11 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     );
   }
 
-  async getEvent(eventId: string): Promise<WebhookEvent | undefined> {
+  async getEvent(key: EventKey): Promise<WebhookEvent | undefined> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT event_id, source, payload FROM webhook_events WHERE event_id = $1',
-      [eventId],
+      'SELECT event_id, source, payload FROM webhook_events WHERE source = $1 AND event_id = $2',
+      [key.source, key.eventId],
     );
     const row = result.rows[0];
     return row
@@ -63,61 +130,51 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       : undefined;
   }
 
-  async hasSuccessfulDelivery(eventId: string): Promise<boolean> {
-    await this.ensureSchema();
-    const result = await this.pool.query(
-      `
-        SELECT EXISTS (
-          SELECT 1 FROM delivery_attempts
-          WHERE event_id = $1 AND status = 'delivered'
-        ) AS delivered
-      `,
-      [eventId],
-    );
-    return result.rows[0].delivered;
-  }
-
   async markDeadLetter(deadLetter: DeadLetter): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
       `
-        INSERT INTO dead_letters (event_id, reason)
-        VALUES ($1, $2)
-        ON CONFLICT (event_id) DO UPDATE SET reason = EXCLUDED.reason
+        INSERT INTO dead_letters (source, event_id, reason)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (source, event_id) DO UPDATE SET reason = EXCLUDED.reason
       `,
-      [deadLetter.eventId, deadLetter.reason],
+      [deadLetter.source, deadLetter.eventId, deadLetter.reason],
     );
   }
 
-  async getDeadLetter(eventId: string): Promise<DeadLetter | undefined> {
+  async getDeadLetter(key: EventKey): Promise<DeadLetter | undefined> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT event_id, reason FROM dead_letters WHERE event_id = $1',
-      [eventId],
+      'SELECT source, event_id, reason FROM dead_letters WHERE source = $1 AND event_id = $2',
+      [key.source, key.eventId],
     );
     const row = result.rows[0];
-    return row ? { eventId: row.event_id, reason: row.reason } : undefined;
+    return row
+      ? { source: row.source, eventId: row.event_id, reason: row.reason }
+      : undefined;
   }
 
-  async clearDeadLetter(eventId: string): Promise<void> {
+  async clearDeadLetter(key: EventKey): Promise<void> {
     await this.ensureSchema();
-    await this.pool.query('DELETE FROM dead_letters WHERE event_id = $1', [
-      eventId,
-    ]);
+    await this.pool.query(
+      'DELETE FROM dead_letters WHERE source = $1 AND event_id = $2',
+      [key.source, key.eventId],
+    );
   }
 
-  async getAttempts(eventId: string): Promise<DeliveryAttempt[]> {
+  async getAttempts(key: EventKey): Promise<DeliveryAttempt[]> {
     await this.ensureSchema();
     const result = await this.pool.query(
       `
-        SELECT event_id, attempt_number, status, http_status, error, duration_ms, created_at
+        SELECT source, event_id, attempt_number, status, http_status, error, duration_ms, created_at
         FROM delivery_attempts
-        WHERE event_id = $1
+        WHERE source = $1 AND event_id = $2
         ORDER BY created_at ASC, id ASC
       `,
-      [eventId],
+      [key.source, key.eventId],
     );
     return result.rows.map((row) => ({
+      source: row.source,
       eventId: row.event_id,
       attemptNumber: row.attempt_number,
       status: row.status,
@@ -131,9 +188,10 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
   async listDeadLetters(): Promise<DeadLetter[]> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT event_id, reason FROM dead_letters ORDER BY failed_at DESC',
+      'SELECT source, event_id, reason FROM dead_letters ORDER BY failed_at DESC',
     );
     return result.rows.map((row) => ({
+      source: row.source,
       eventId: row.event_id,
       reason: row.reason,
     }));
@@ -144,36 +202,112 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
   }
 
   private ensureSchema(): Promise<void> {
-    this.schemaReady ??= this.pool
-      .query(
-        `
+    this.schemaReady ??= this.migrateSchema().catch((error) => {
+      this.schemaReady = undefined;
+      throw error;
+    });
+
+    return this.schemaReady;
+  }
+
+  // Idempotent: creates the current schema on a fresh database and upgrades
+  // databases created by earlier versions. The advisory lock keeps several
+  // instances starting at once from migrating concurrently.
+  private async migrateSchema(): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(727274)');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS webhook_events (
-          event_id TEXT PRIMARY KEY,
           source TEXT NOT NULL,
+          event_id TEXT NOT NULL,
           payload JSONB NOT NULL,
-          received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          enqueued_at TIMESTAMPTZ,
+          PRIMARY KEY (source, event_id)
         );
 
         CREATE TABLE IF NOT EXISTS delivery_attempts (
           id BIGSERIAL PRIMARY KEY,
-          event_id TEXT NOT NULL REFERENCES webhook_events(event_id),
+          source TEXT NOT NULL,
+          event_id TEXT NOT NULL,
           attempt_number INTEGER NOT NULL,
           status TEXT NOT NULL,
           http_status INTEGER,
           error TEXT,
           duration_ms INTEGER NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          FOREIGN KEY (source, event_id) REFERENCES webhook_events(source, event_id)
         );
 
         CREATE TABLE IF NOT EXISTS dead_letters (
-          event_id TEXT PRIMARY KEY REFERENCES webhook_events(event_id),
+          source TEXT NOT NULL,
+          event_id TEXT NOT NULL,
           reason TEXT NOT NULL,
-          failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `,
-      )
-      .then(() => undefined);
+          failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (source, event_id),
+          FOREIGN KEY (source, event_id) REFERENCES webhook_events(source, event_id)
+        );
 
-    return this.schemaReady;
+        DO $$
+        BEGIN
+          -- Outbox: events stored before this column existed were already
+          -- handled, so they must not be re-enqueued by the sweeper.
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'webhook_events' AND column_name = 'enqueued_at'
+          ) THEN
+            ALTER TABLE webhook_events ADD COLUMN enqueued_at TIMESTAMPTZ;
+            UPDATE webhook_events SET enqueued_at = received_at;
+          END IF;
+
+          -- Events keyed by event_id alone become keyed by (source, event_id).
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'delivery_attempts' AND column_name = 'source'
+          ) THEN
+            ALTER TABLE delivery_attempts ADD COLUMN source TEXT;
+            UPDATE delivery_attempts a SET source = e.source
+              FROM webhook_events e WHERE e.event_id = a.event_id;
+            ALTER TABLE delivery_attempts ALTER COLUMN source SET NOT NULL;
+
+            ALTER TABLE dead_letters ADD COLUMN source TEXT;
+            UPDATE dead_letters d SET source = e.source
+              FROM webhook_events e WHERE e.event_id = d.event_id;
+            ALTER TABLE dead_letters ALTER COLUMN source SET NOT NULL;
+
+            ALTER TABLE delivery_attempts DROP CONSTRAINT delivery_attempts_event_id_fkey;
+            ALTER TABLE dead_letters DROP CONSTRAINT dead_letters_event_id_fkey;
+            ALTER TABLE dead_letters DROP CONSTRAINT dead_letters_pkey;
+            ALTER TABLE webhook_events DROP CONSTRAINT webhook_events_pkey;
+
+            ALTER TABLE webhook_events ADD PRIMARY KEY (source, event_id);
+            ALTER TABLE dead_letters ADD PRIMARY KEY (source, event_id);
+            ALTER TABLE delivery_attempts ADD FOREIGN KEY (source, event_id)
+              REFERENCES webhook_events(source, event_id);
+            ALTER TABLE dead_letters ADD FOREIGN KEY (source, event_id)
+              REFERENCES webhook_events(source, event_id);
+          END IF;
+        END
+        $$;
+
+        CREATE INDEX IF NOT EXISTS webhook_events_pending_idx
+          ON webhook_events (received_at) WHERE enqueued_at IS NULL;
+        CREATE INDEX IF NOT EXISTS delivery_attempts_event_idx
+          ON delivery_attempts (source, event_id);
+        CREATE INDEX IF NOT EXISTS webhook_events_event_id_idx
+          ON webhook_events (event_id);
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

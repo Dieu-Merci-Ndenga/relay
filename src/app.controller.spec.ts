@@ -1,12 +1,17 @@
 import { createHmac } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { EVENT_STORE } from './events/event-store';
 import { InMemoryEventStore } from './events/in-memory-event.store';
 import { DELIVERY_QUEUE } from './delivery/delivery-queue';
 import { InMemoryDeliveryQueue } from './delivery/in-memory-delivery.queue';
+import { MetricsService } from './metrics/metrics.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -18,6 +23,7 @@ describe('AppController', () => {
       controllers: [AppController],
       providers: [
         AppService,
+        MetricsService,
         { provide: EVENT_STORE, useClass: InMemoryEventStore },
         { provide: DELIVERY_QUEUE, useClass: InMemoryDeliveryQueue },
       ],
@@ -84,6 +90,7 @@ describe('AppController', () => {
         payload,
       });
       await eventStore.recordAttempt({
+        source: 'stripe',
         eventId: 'evt_delivered',
         attemptNumber: 1,
         status: 'delivered',
@@ -102,6 +109,27 @@ describe('AppController', () => {
       expect(deliveryQueue.jobs).toHaveLength(0);
     });
 
+    it('rejects malformed source or event ids', async () => {
+      const request = { rawBody, body: payload } as never;
+
+      await expect(
+        appController.receiveWebhook(
+          'stripe',
+          'bad id\r\n',
+          signature,
+          request,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        appController.receiveWebhook(
+          'a'.repeat(200),
+          'evt_1',
+          signature,
+          request,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('rejects an invalid signature', async () => {
       const request = { rawBody, body: payload } as never;
 
@@ -112,6 +140,7 @@ describe('AppController', () => {
 
     it('exposes attempts and dead letters', async () => {
       await eventStore.recordAttempt({
+        source: 'stripe',
         eventId: 'evt_failed',
         attemptNumber: 5,
         status: 'failed',
@@ -120,15 +149,22 @@ describe('AppController', () => {
         durationMs: 42,
       });
       await eventStore.markDeadLetter({
+        source: 'stripe',
         eventId: 'evt_failed',
         reason: 'receiver unavailable',
       });
 
-      await expect(appController.getAttempts('evt_failed')).resolves.toEqual([
+      await expect(
+        appController.getAttempts('stripe', 'evt_failed'),
+      ).resolves.toEqual([
         expect.objectContaining({ attemptNumber: 5, httpStatus: 503 }),
       ]);
       await expect(appController.getDeadLetters()).resolves.toEqual([
-        { eventId: 'evt_failed', reason: 'receiver unavailable' },
+        {
+          source: 'stripe',
+          eventId: 'evt_failed',
+          reason: 'receiver unavailable',
+        },
       ]);
     });
 
@@ -139,16 +175,100 @@ describe('AppController', () => {
         payload: { event: 'payment.created' },
       });
       await eventStore.markDeadLetter({
+        source: 'stripe',
         eventId: 'evt_retry',
         reason: 'receiver unavailable',
       });
 
-      await expect(appController.retryEvent('evt_retry')).resolves.toEqual({
+      await expect(
+        appController.retryEvent('stripe', 'evt_retry'),
+      ).resolves.toEqual({
+        source: 'stripe',
         eventId: 'evt_retry',
         status: 'queued_for_retry',
       });
       expect(deliveryQueue.jobs).toHaveLength(1);
       expect(deliveryQueue.jobs[0]).toMatchObject({ eventId: 'evt_retry' });
+    });
+
+    it('keeps events with the same id from different sources apart', async () => {
+      const request = { rawBody, body: payload } as never;
+
+      await expect(
+        appController.receiveWebhook('stripe', 'evt_same', signature, request),
+      ).resolves.toMatchObject({ duplicate: false });
+      await expect(
+        appController.receiveWebhook('github', 'evt_same', signature, request),
+      ).resolves.toMatchObject({ duplicate: false });
+
+      expect(deliveryQueue.jobs.map((job) => job.source)).toEqual([
+        'stripe',
+        'github',
+      ]);
+    });
+
+    it('resolves legacy routes only when the event id is unambiguous', async () => {
+      const request = { rawBody, body: payload } as never;
+      await appController.receiveWebhook(
+        'stripe',
+        'evt_legacy',
+        signature,
+        request,
+      );
+      await eventStore.markDeadLetter({
+        source: 'stripe',
+        eventId: 'evt_legacy',
+        reason: 'boom',
+      });
+
+      await expect(
+        appController.getAttemptsByEventId('evt_unknown'),
+      ).resolves.toEqual([]);
+      await expect(
+        appController.retryEventByEventId('evt_legacy'),
+      ).resolves.toMatchObject({
+        source: 'stripe',
+        status: 'queued_for_retry',
+      });
+
+      await appController.receiveWebhook(
+        'github',
+        'evt_legacy',
+        signature,
+        request,
+      );
+      await expect(
+        appController.retryEventByEventId('evt_legacy'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('serves metrics and enforces the optional token', async () => {
+      const response = { type: jest.fn() } as never;
+      const request = { rawBody, body: payload } as never;
+      await appController.receiveWebhook(
+        'stripe',
+        'evt_metrics',
+        signature,
+        request,
+      );
+
+      await expect(
+        appController.getMetrics(undefined, response),
+      ).resolves.toContain(
+        'relay_events_received_total{source="stripe",result="new"} 1',
+      );
+
+      process.env.METRICS_TOKEN = 's3cret';
+      try {
+        await expect(
+          appController.getMetrics('Bearer wrong', response),
+        ).rejects.toThrow(UnauthorizedException);
+        await expect(
+          appController.getMetrics('Bearer s3cret', response),
+        ).resolves.toContain('relay_outbox_pending_events');
+      } finally {
+        delete process.env.METRICS_TOKEN;
+      }
     });
   });
 });

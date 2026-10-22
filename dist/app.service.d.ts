@@ -1,11 +1,13 @@
-import { WebhookEvent } from './events/event-store';
+import { EventKey, WebhookEvent } from './events/event-store';
 import type { EventStore } from './events/event-store';
 import type { DeliveryQueue } from './delivery/delivery-queue';
+import { MetricsService } from './metrics/metrics.service';
 export declare class AppService {
     private readonly eventStore;
     private readonly deliveryQueue;
+    private readonly metrics;
     private readonly secret;
-    constructor(eventStore: EventStore, deliveryQueue: DeliveryQueue);
+    constructor(eventStore: EventStore, deliveryQueue: DeliveryQueue, metrics: MetricsService);
     verifySignature(rawBody: Buffer | undefined, signature: string): boolean;
     acceptEvent(event: WebhookEvent): Promise<{
         accepted: boolean;
@@ -13,10 +15,13 @@ export declare class AppService {
         eventId: string;
         status: string;
     }>;
-    retryEvent(eventId: string): Promise<{
+    retryEvent(key: EventKey): Promise<{
+        source: string;
         eventId: string;
         status: string;
     }>;
-    getAttempts(eventId: string): Promise<import("./events/event-store").DeliveryAttempt[]>;
+    getAttempts(key: EventKey): Promise<import("./events/event-store").DeliveryAttempt[]>;
+    getAttemptsByEventId(eventId: string): Promise<import("./events/event-store").DeliveryAttempt[] | never[]>;
     listDeadLetters(): Promise<import("./events/event-store").DeadLetter[]>;
+    resolveKey(eventId: string): Promise<EventKey>;
 }

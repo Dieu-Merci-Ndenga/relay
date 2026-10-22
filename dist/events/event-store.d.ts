@@ -1,11 +1,12 @@
 export declare const EVENT_STORE: unique symbol;
-export type WebhookEvent = {
-    eventId: string;
+export type EventKey = {
     source: string;
+    eventId: string;
+};
+export type WebhookEvent = EventKey & {
     payload: unknown;
 };
-export type DeliveryAttempt = {
-    eventId: string;
+export type DeliveryAttempt = EventKey & {
     attemptNumber: number;
     status: 'delivered' | 'failed';
     httpStatus?: number;
@@ -13,18 +14,21 @@ export type DeliveryAttempt = {
     durationMs: number;
     createdAt?: string;
 };
-export type DeadLetter = {
-    eventId: string;
+export type DeadLetter = EventKey & {
     reason: string;
 };
 export interface EventStore {
     saveIfNew(event: WebhookEvent): Promise<boolean>;
-    hasSuccessfulDelivery(eventId: string): Promise<boolean>;
-    getEvent(eventId: string): Promise<WebhookEvent | undefined>;
+    getEvent(key: EventKey): Promise<WebhookEvent | undefined>;
+    findSources(eventId: string): Promise<string[]>;
+    hasSuccessfulDelivery(key: EventKey): Promise<boolean>;
+    markEnqueued(key: EventKey): Promise<void>;
+    listPendingEnqueue(olderThanMs: number, limit: number): Promise<WebhookEvent[]>;
+    countPendingEnqueue(): Promise<number>;
     recordAttempt(attempt: DeliveryAttempt): Promise<void>;
     markDeadLetter(deadLetter: DeadLetter): Promise<void>;
-    getDeadLetter(eventId: string): Promise<DeadLetter | undefined>;
-    clearDeadLetter(eventId: string): Promise<void>;
-    getAttempts(eventId: string): Promise<DeliveryAttempt[]>;
+    getDeadLetter(key: EventKey): Promise<DeadLetter | undefined>;
+    clearDeadLetter(key: EventKey): Promise<void>;
+    getAttempts(key: EventKey): Promise<DeliveryAttempt[]>;
     listDeadLetters(): Promise<DeadLetter[]>;
 }

@@ -20,8 +20,10 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
 }
 
-async function request(path, options) {
-  const response = await fetch(`${apiBase}${path}`, options);
+async function request(path, options = {}) {
+  const token = sessionStorage.getItem("relayAdminToken");
+  const headers = { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const response = await fetch(`${apiBase}${path}`, { ...options, headers });
   let body;
   try { body = await response.json(); } catch { body = null; }
   if (!response.ok) throw new Error(body?.message || `The request failed (${response.status})`);
@@ -43,11 +45,11 @@ function renderDeadLetters() {
   table.hidden = false;
   state.deadLetters.forEach((deadLetter) => {
     const row = document.createElement("tr");
-    row.innerHTML = `<td><code>${escapeHtml(deadLetter.eventId)}</code></td><td>${escapeHtml(deadLetter.reason)}</td><td class="action-cell"></td>`;
+    row.innerHTML = `<td>${escapeHtml(deadLetter.source)}</td><td><code>${escapeHtml(deadLetter.eventId)}</code></td><td>${escapeHtml(deadLetter.reason)}</td><td class="action-cell"></td>`;
     const button = document.createElement("button");
     button.className = "button small";
     button.textContent = "Retry";
-    button.addEventListener("click", () => retryEvent(deadLetter.eventId, button));
+    button.addEventListener("click", () => retryEvent(deadLetter.source, deadLetter.eventId, button));
     row.querySelector(".action-cell").append(button);
     rows.append(row);
   });
@@ -72,11 +74,11 @@ async function loadDeadLetters() {
   }
 }
 
-async function retryEvent(eventId, button) {
+async function retryEvent(source, eventId, button) {
   button.disabled = true;
   button.textContent = "Retrying...";
   try {
-    await request(`/events/${encodeURIComponent(eventId)}/retry`, { method: "POST" });
+    await request(`/events/${encodeURIComponent(source)}/${encodeURIComponent(eventId)}/retry`, { method: "POST" });
     setFeedback($("#feedback"), `Event ${eventId} has been queued for retry.`, "success");
     await loadDeadLetters();
   } catch (error) {
@@ -94,7 +96,11 @@ async function loadAttempts(event) {
   if (!eventId) return;
   hide(feedback);
   try {
-    const attempts = await request(`/events/${encodeURIComponent(eventId)}/attempts`);
+    const source = $("#event-source").value.trim();
+    const path = source
+      ? `/events/${encodeURIComponent(source)}/${encodeURIComponent(eventId)}/attempts`
+      : `/events/${encodeURIComponent(eventId)}/attempts`;
+    const attempts = await request(path);
     if (!Array.isArray(attempts)) throw new Error("Unexpected response from the API");
     const rows = $("#attempt-rows");
     rows.replaceChildren();
@@ -131,6 +137,12 @@ function escapeHtml(value) {
 
 $("#attempt-form").addEventListener("submit", loadAttempts);
 $("#refresh-button").addEventListener("click", () => { checkHealth(); loadDeadLetters(); });
+$("#admin-token").value = sessionStorage.getItem("relayAdminToken") || "";
+$("#token-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  sessionStorage.setItem("relayAdminToken", $("#admin-token").value.trim());
+  loadDeadLetters();
+});
 $("#reload-button").addEventListener("click", loadDeadLetters);
 $("#api-url").textContent = apiBase;
 checkHealth();
