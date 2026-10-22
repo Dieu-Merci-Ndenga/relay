@@ -8,22 +8,54 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InMemoryEventStore = void 0;
 const common_1 = require("@nestjs/common");
+const keyOf = ({ source, eventId }) => JSON.stringify([source, eventId]);
 let InMemoryEventStore = class InMemoryEventStore {
     events = new Map();
     attempts = [];
     deadLetters = [];
     async saveIfNew(event) {
-        if (this.events.has(event.eventId)) {
+        const key = keyOf(event);
+        if (this.events.has(key)) {
             return false;
         }
-        this.events.set(event.eventId, event);
+        this.events.set(key, { ...event, receivedAt: Date.now() });
         return true;
     }
-    async getEvent(eventId) {
-        return this.events.get(eventId);
+    async getEvent(key) {
+        const stored = this.events.get(keyOf(key));
+        return stored
+            ? {
+                eventId: stored.eventId,
+                source: stored.source,
+                payload: stored.payload,
+            }
+            : undefined;
     }
-    async hasSuccessfulDelivery(eventId) {
-        return this.attempts.some((attempt) => attempt.eventId === eventId && attempt.status === 'delivered');
+    async findSources(eventId) {
+        return [...this.events.values()]
+            .filter((event) => event.eventId === eventId)
+            .map((event) => event.source);
+    }
+    async hasSuccessfulDelivery(key) {
+        return this.attempts.some((attempt) => keyOf(attempt) === keyOf(key) && attempt.status === 'delivered');
+    }
+    async markEnqueued(key) {
+        const stored = this.events.get(keyOf(key));
+        if (stored) {
+            stored.enqueuedAt ??= Date.now();
+        }
+    }
+    async listPendingEnqueue(olderThanMs, limit) {
+        const cutoff = Date.now() - olderThanMs;
+        return [...this.events.values()]
+            .filter((event) => !event.enqueuedAt && event.receivedAt <= cutoff)
+            .sort((a, b) => a.receivedAt - b.receivedAt)
+            .slice(0, limit)
+            .map(({ eventId, source, payload }) => ({ eventId, source, payload }));
+    }
+    async countPendingEnqueue() {
+        return [...this.events.values()].filter((event) => !event.enqueuedAt)
+            .length;
     }
     async recordAttempt(attempt) {
         this.attempts.push({
@@ -32,24 +64,24 @@ let InMemoryEventStore = class InMemoryEventStore {
         });
     }
     async markDeadLetter(deadLetter) {
-        const existingIndex = this.deadLetters.findIndex((item) => item.eventId === deadLetter.eventId);
+        const existingIndex = this.deadLetters.findIndex((item) => keyOf(item) === keyOf(deadLetter));
         if (existingIndex >= 0) {
             this.deadLetters[existingIndex] = deadLetter;
             return;
         }
         this.deadLetters.push(deadLetter);
     }
-    async getDeadLetter(eventId) {
-        return this.deadLetters.find((item) => item.eventId === eventId);
+    async getDeadLetter(key) {
+        return this.deadLetters.find((item) => keyOf(item) === keyOf(key));
     }
-    async clearDeadLetter(eventId) {
-        const index = this.deadLetters.findIndex((item) => item.eventId === eventId);
+    async clearDeadLetter(key) {
+        const index = this.deadLetters.findIndex((item) => keyOf(item) === keyOf(key));
         if (index >= 0) {
             this.deadLetters.splice(index, 1);
         }
     }
-    async getAttempts(eventId) {
-        return this.attempts.filter((attempt) => attempt.eventId === eventId);
+    async getAttempts(key) {
+        return this.attempts.filter((attempt) => keyOf(attempt) === keyOf(key));
     }
     async listDeadLetters() {
         return this.deadLetters;

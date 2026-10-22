@@ -3,8 +3,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
-  const frontendOrigins = process.env.FRONTEND_URL
-    ?.split(',')
+  const frontendOrigins = process.env.FRONTEND_URL?.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 

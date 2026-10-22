@@ -8,10 +8,11 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InMemoryDeliveryQueue = void 0;
 const common_1 = require("@nestjs/common");
+const delivery_queue_1 = require("./delivery-queue");
 let InMemoryDeliveryQueue = class InMemoryDeliveryQueue {
     jobs = [];
     jobIds = new Set();
-    async enqueue(job, jobId = job.eventId) {
+    async enqueue(job, jobId = (0, delivery_queue_1.deliveryJobId)(job.source, job.eventId)) {
         if (this.jobIds.has(jobId)) {
             return;
         }

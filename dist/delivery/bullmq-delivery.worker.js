@@ -16,71 +16,70 @@ exports.BullMqDeliveryWorker = void 0;
 const common_1 = require("@nestjs/common");
 const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
-const QUEUE_NAME = 'relay-deliveries';
+const bullmq_delivery_queue_1 = require("./bullmq-delivery.queue");
+const delivery_processor_1 = require("./delivery-processor");
+const metrics_service_1 = require("../metrics/metrics.service");
+const intFromEnv = (name, fallback) => {
+    const value = Number.parseInt(process.env[name] ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+};
 let BullMqDeliveryWorker = class BullMqDeliveryWorker {
     eventStore;
+    metrics;
     connection = new ioredis_1.default(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
-    worker;
-    constructor(eventStore) {
+    retryQueue = new bullmq_1.Queue(bullmq_delivery_queue_1.RETRY_QUEUE_NAME, {
+        connection: this.connection,
+        defaultJobOptions: { removeOnComplete: 1000, removeOnFail: false },
+    });
+    workers = [];
+    constructor(eventStore, metrics) {
         this.eventStore = eventStore;
+        this.metrics = metrics;
+    }
+    async scheduleRetry(job, jobId, delayMs) {
+        await this.retryQueue.add(`event:${job.eventId}`, job, {
+            jobId,
+            delay: delayMs,
+        });
     }
     onModuleInit() {
-        const deliveryUrl = process.env.DELIVERY_URL;
-        if (!deliveryUrl) {
+        const url = process.env.DELIVERY_URL;
+        if (!url) {
             return;
         }
-        this.worker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
-            const startedAt = Date.now();
-            const attemptNumber = job.attemptsMade + 1;
-            try {
-                const response = await fetch(deliveryUrl, {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/json',
-                        'x-relay-event-id': job.data.eventId,
-                        'x-relay-source': job.data.source,
-                    },
-                    body: JSON.stringify(job.data.payload),
-                });
-                if (!response.ok) {
-                    throw new Error(`Delivery failed with HTTP ${response.status}`);
-                }
-                await this.eventStore.recordAttempt({
-                    eventId: job.data.eventId,
-                    attemptNumber,
-                    status: 'delivered',
-                    httpStatus: response.status,
-                    durationMs: Date.now() - startedAt,
-                });
-                await this.eventStore.clearDeadLetter(job.data.eventId);
-            }
-            catch (error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                await this.eventStore.recordAttempt({
-                    eventId: job.data.eventId,
-                    attemptNumber,
-                    status: 'failed',
-                    error: reason,
-                    durationMs: Date.now() - startedAt,
-                });
-                if (attemptNumber >= (job.opts.attempts ?? 1)) {
-                    await this.eventStore.markDeadLetter({
-                        eventId: job.data.eventId,
-                        reason,
-                    });
-                }
-                throw error;
-            }
-        }, { connection: this.connection, concurrency: 10 });
+        const processor = new delivery_processor_1.DeliveryProcessor(this.eventStore, this, this.metrics, {
+            url,
+            secret: process.env.DELIVERY_SECRET ??
+                process.env.WEBHOOK_SECRET ??
+                'dev-secret',
+            maxAttempts: intFromEnv('DELIVERY_MAX_ATTEMPTS', 5),
+            backoffBaseMs: intFromEnv('DELIVERY_BACKOFF_MS', 1000),
+        });
+        const handle = (job) => processor.process(job.data, {
+            jobId: job.id ?? '',
+            queueLagMs: (job.processedOn ?? Date.now()) -
+                (job.timestamp + (job.opts.delay ?? 0)),
+        });
+        this.workers = [
+            new bullmq_1.Worker(bullmq_delivery_queue_1.QUEUE_NAME, handle, {
+                connection: this.connection,
+                concurrency: intFromEnv('DELIVERY_CONCURRENCY', 10),
+            }),
+            new bullmq_1.Worker(bullmq_delivery_queue_1.RETRY_QUEUE_NAME, handle, {
+                connection: this.connection,
+                concurrency: intFromEnv('RETRY_CONCURRENCY', 5),
+            }),
+        ];
     }
     async onModuleDestroy() {
-        await this.worker?.close();
+        await Promise.all(this.workers.map((worker) => worker.close()));
+        await this.retryQueue.close();
         await this.connection.quit();
     }
 };
 exports.BullMqDeliveryWorker = BullMqDeliveryWorker;
 exports.BullMqDeliveryWorker = BullMqDeliveryWorker = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [Object])
+    __metadata("design:paramtypes", [Object, metrics_service_1.MetricsService])
 ], BullMqDeliveryWorker);
 //# sourceMappingURL=bullmq-delivery.worker.js.map

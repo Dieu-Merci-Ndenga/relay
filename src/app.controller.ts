@@ -6,18 +6,40 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request, Response } from 'express';
 import { AppService } from './app.service';
+import { MetricsService } from './metrics/metrics.service';
+import { safeEqual } from './signature';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   @Get('health')
   health() {
     return { status: 'ok' };
+  }
+
+  // Open by default; set METRICS_TOKEN to require `Authorization: Bearer <token>`.
+  @Get('metrics')
+  async getMetrics(
+    @Headers('authorization') authorization: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const token = process.env.METRICS_TOKEN;
+
+    if (token && !safeEqual(authorization ?? '', `Bearer ${token}`)) {
+      throw new UnauthorizedException('Invalid metrics token');
+    }
+
+    response.type(this.metrics.contentType);
+    return this.metrics.metrics();
   }
 
   @Post('webhooks/:source')
@@ -31,7 +53,10 @@ export class AppController {
       throw new BadRequestException('x-relay-event-id is required');
     }
 
-    if (!signature || !this.appService.verifySignature(request.rawBody, signature)) {
+    if (
+      !signature ||
+      !this.appService.verifySignature(request.rawBody, signature)
+    ) {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
@@ -42,18 +67,37 @@ export class AppController {
     });
   }
 
+  @Get('events/:source/:eventId/attempts')
+  getAttempts(
+    @Param('source') source: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.appService.getAttempts({ source, eventId });
+  }
+
+  @Post('events/:source/:eventId/retry')
+  retryEvent(
+    @Param('source') source: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.appService.retryEvent({ source, eventId });
+  }
+
+  // Legacy routes: only valid while the event id is unique across sources.
   @Get('events/:eventId/attempts')
-  getAttempts(@Param('eventId') eventId: string) {
-    return this.appService.getAttempts(eventId);
+  getAttemptsByEventId(@Param('eventId') eventId: string) {
+    return this.appService.getAttemptsByEventId(eventId);
+  }
+
+  @Post('events/:eventId/retry')
+  async retryEventByEventId(@Param('eventId') eventId: string) {
+    return this.appService.retryEvent(
+      await this.appService.resolveKey(eventId),
+    );
   }
 
   @Get('dead-letters')
   getDeadLetters() {
     return this.appService.listDeadLetters();
-  }
-
-  @Post('events/:eventId/retry')
-  retryEvent(@Param('eventId') eventId: string) {
-    return this.appService.retryEvent(eventId);
   }
 }
