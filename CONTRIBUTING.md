@@ -1,78 +1,66 @@
-
 # Contributing to Relay
 
-Thank you for your interest in contributing to Relay.
-
-Relay is an open-source webhook reliability platform built with NestJS, PostgreSQL, Redis, and BullMQ. Its primary goals are correctness, observability, and recoverable asynchronous event delivery.
+Thank you for your interest in contributing to Relay, a webhook reliability platform built with NestJS, PostgreSQL, Redis and BullMQ. Its priorities are correctness, observability and recoverable asynchronous delivery. By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ways to Contribute
 
-Contributions are welcome in the following areas:
-
-- Bug reports and reproducible failures.
-- Architecture reviews and reliability improvements.
-- Security and concurrency edge cases.
-- Unit tests, end-to-end tests, and failure-recovery scenarios.
+- Bug reports with a reproducible failure.
+- Reliability, concurrency and failure-recovery improvements.
+- Security hardening (see [Security](#security)).
+- Unit, end-to-end and integration tests.
 - Documentation improvements.
-- Focused pull requests.
 
 ## Reporting Issues
 
-Before opening an issue, please check whether a similar report already exists.
+Search existing issues first. Please include the expected and actual behavior, steps to reproduce, relevant logs or test output, and your environment (Node.js, PostgreSQL and Redis versions). Remove secrets, tokens and personal data from everything you share.
 
-Include the following information whenever possible:
+## Development Setup
 
-- Expected behavior.
-- Actual behavior.
-- Steps to reproduce the problem.
-- Relevant logs or test output.
-- Environment details, including relevant runtime or dependency versions.
+Requirements: Node.js 22 or later, npm and Docker.
 
-Remove secrets, credentials, tokens, and personal data from all logs and examples.
+```bash
+git clone https://github.com/Dieu-Merci-Ndenga/relay.git
+cd relay
+npm ci
+docker compose up -d      # PostgreSQL and Redis
+npm run start:dev
+```
 
-## Development and Testing
+See the [README](README.md#local-development) for configuration and a signed example request. Configuration is read from environment variables; [.env.example](.env.example) lists them with their defaults.
 
-1. Fork the repository and create a focused branch.
-2. Install dependencies and start the required local services using the documented setup.
-3. Add or update tests for your changes.
-4. Run the relevant checks:
+## Checks
 
-   ```bash
-   npm test -- --runInBand
-   npm run test:e2e -- --runInBand
-   npm run build
-   ```
+Run these before opening a pull request. The same checks run in [CI](.github/workflows/ci.yml).
 
-5. Open a pull request describing the change, its motivation, the tests performed, and any relevant trade-offs.
+```bash
+npm run lint
+npm run format:check
+npm test -- --runInBand
+npm run test:e2e -- --runInBand
+npm run test:integration   # requires Docker; run it when persistence, queues or the outbox change
+npm run build
+```
 
-Use the repository's documented commands and configuration. If a check cannot be run, explain why in the pull request.
+## Pull Requests
 
-## Pull Request Guidelines
+1. Fork the repository and create a focused branch from `main`.
+2. Keep each pull request small and on a single topic.
+3. Add or update tests; bug fixes should include a regression test where practical.
+4. Preserve existing behavior unless the change explicitly requires otherwise, and document reliability or architectural trade-offs.
+5. Fill in the pull request template with the motivation, the tests you ran and any check you could not run.
 
-- Keep changes focused and easy to review.
-- Preserve existing behavior unless the change explicitly requires otherwise.
-- Include regression tests for bug fixes where practical.
-- Document architectural changes and reliability trade-offs.
-- Do not introduce secrets, credentials, or unrelated changes.
+For significant architectural changes, open an issue first to agree on the approach.
 
-For significant architectural changes, open an issue first to discuss the proposed approach.
+Never commit secrets, credentials, `.env` files or build output (`dist/`).
 
 ## Security
 
-Please do not disclose exploitable vulnerabilities in public issues.
-
-Use the repository's private vulnerability reporting mechanism, if enabled, or contact the maintainer privately. Include enough information to reproduce the issue safely without exposing real credentials or sensitive data.
-
-See `SECURITY.md` for the project's security reporting procedure, when available.
+Do not disclose exploitable vulnerabilities in public issues or pull requests. Follow the private reporting process in [SECURITY.md](SECURITY.md).
 
 ## Project Scope
 
-Relay focuses on reliable asynchronous webhook delivery, idempotent processing, retry handling, dead-letter recovery, and operational observability.
-
-Contributions should support these goals and include appropriate tests when they affect reliability or correctness.
+Relay focuses on reliable asynchronous webhook delivery: signature validation, idempotent processing, retries, dead-letter recovery and operational observability. Changes outside this scope, such as multi-tenancy or per-endpoint subscriptions, are listed as known limitations in the README and should be discussed in an issue first.
 
 ## License
 
-By submitting a contribution, you agree that your contribution will be distributed under the MIT License that applies to this project.
-
-Thank you for helping make Relay more reliable.
+By submitting a contribution, you agree that it will be distributed under the [MIT License](LICENSE) that covers this project.

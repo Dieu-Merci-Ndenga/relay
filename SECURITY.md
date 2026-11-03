@@ -1,102 +1,59 @@
-
 # Security Policy
 
 ## Supported Versions
 
-Security fixes are generally prioritized for the latest version of Relay available on the `main` branch.
-
-As Relay is an actively developed open-source project, support for older versions is not guaranteed.
+Security fixes are prioritized for the latest version on the `main` branch. Older versions are not guaranteed support.
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Relay, please report it responsibly.
+Please report vulnerabilities responsibly. **Do not open a public issue, pull request or discussion for an exploitable vulnerability.**
 
-**Do not disclose exploitable vulnerabilities in public GitHub issues, pull requests, or discussions.**
+Use GitHub's private vulnerability reporting for this repository (**Security → Report a vulnerability**), or contact the maintainer privately through the contact information on their GitHub profile. Include:
 
-### Preferred Reporting Method
+- A description of the issue and its impact.
+- Steps or a minimal proof of concept to reproduce it safely.
+- The affected component, endpoint or configuration, and the version or commit.
+- Relevant logs or requests with sensitive information removed.
 
-If GitHub Private Vulnerability Reporting is enabled for this repository:
+Do not include real credentials, production secrets or personal data. Relay is maintained on a best-effort basis: you can expect an acknowledgement within a few days, but no fixed resolution time is guaranteed. Please allow reasonable time for a fix before any public disclosure.
 
-1. Open the repository's **Security** tab.
-2. Select **Report a vulnerability**.
-3. Provide the details needed to understand and reproduce the issue safely.
+## Scope
 
-If private vulnerability reporting is unavailable, contact the repository maintainer privately through the contact information listed on their GitHub profile.
+In scope: the NestJS API, webhook signature validation, idempotency and delivery logic, operator routes, the outbox and queue processing, the Docker and Render configuration, and the static console in `frontend/`.
 
-Do not include credentials, production secrets, personal data, or sensitive customer information in your report.
+Out of scope: vulnerabilities in third-party services or dependencies without a demonstrated impact on Relay, the intentionally open demo receiver (`demo/receiver.mjs`), social engineering, and load or destructive testing against public deployments without prior authorization.
 
-### What to Include
+## Security Model
 
-Please provide, where possible:
+- **Inbound authentication:** every webhook carries an HMAC-SHA256 signature computed over the raw request body, compared in constant time. `source` and `x-relay-event-id` are validated (1-128 characters of `[A-Za-z0-9_.:@+=-]`) before reaching the database, queue or logs.
+- **Idempotency:** event ids are unique per source, so replays never create a second business effect. Delivery is at-least-once; receivers should deduplicate on `x-relay-event-id` and `x-relay-source`.
+- **Outbound delivery:** every delivery is signed with `DELIVERY_SECRET` (falling back to `WEBHOOK_SECRET`), has a timeout (`DELIVERY_TIMEOUT_MS`) and never follows redirects, so a receiver cannot stall a worker or bounce a signed payload to another host.
+- **Operator routes:** `/dead-letters` and `/events/...` (attempts and retry) require `Authorization: Bearer <ADMIN_TOKEN>`. The token is compared in constant time and is **mandatory** in production: the API refuses to start without it. When unset in development, these routes stay open.
+- **Metrics:** `/metrics` is protected by `METRICS_TOKEN` when set.
+- **Production configuration:** with `NODE_ENV=production`, the API refuses to start if `WEBHOOK_SECRET` or `DELIVERY_SECRET` is missing or equals the development default.
+- **Headers and CORS:** `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store` are set, and `X-Powered-By` is removed. CORS is disabled unless `FRONTEND_URL` is set; use exact origins (comma-separated) rather than wildcards.
+- **Console:** the dashboard keeps the admin token in `sessionStorage`, which any script running on that origin can read, and clears it when the tab closes.
+- **Dependencies:** `npm audit --omit=dev --audit-level=high` runs in CI.
 
-- A description of the vulnerability and its potential impact.
-- The affected component, endpoint, or configuration.
-- Steps to reproduce the issue.
-- A minimal proof of concept that does not compromise real systems or data.
-- Relevant logs, request examples, or test results with sensitive information removed.
-- Suggested mitigations, if known.
-
-### What to Expect
-
-The maintainer will review the report and may request additional information to assess its severity and reproducibility.
-
-Please allow reasonable time for investigation and remediation before publicly disclosing the vulnerability.
-
-Relay is an open-source project maintained on a best-effort basis. A response or fix within a specific timeframe is not guaranteed.
-
-## Security Scope
-
-Security reports relevant to Relay may include:
-
-- Webhook signature validation and request tampering.
-- Replay attacks and weaknesses in event authentication.
-- Idempotency bypasses and duplicate business effects.
-- Unauthorized access to event data, delivery history, or dead-letter operations.
-- Unsafe manual retry or administrative operations.
-- Injection vulnerabilities and improper input validation.
-- Exposure of secrets, credentials, or sensitive event payloads.
-- Insecure CORS configuration or unintended public access to internal functionality.
-- Queue processing, concurrency, and recovery flaws with security implications.
-- Dependency vulnerabilities that materially affect Relay.
-
-## Out of Scope
-
-The following are generally outside the scope of security reports unless they demonstrate a concrete security impact:
-
-- Vulnerabilities in third-party services outside Relay's control.
-- Issues affecting unsupported or intentionally insecure local demonstration configurations.
-- Reports based solely on outdated dependency versions without a demonstrated impact.
-- Denial-of-service testing against public deployments without prior authorization.
-- Social engineering, phishing, or physical attacks against maintainers or infrastructure providers.
-
-Public deployments must not be used for destructive testing, unauthorized access attempts, or load testing without explicit permission.
-
-## Deployment and Configuration Responsibilities
-
-Relay integrates with external infrastructure, including PostgreSQL, Redis, and downstream HTTP receivers. Secure deployment depends on correct configuration.
+## Deployment Responsibilities
 
 Operators should:
 
-- Store secrets in environment variables or a dedicated secret manager.
-- Never commit production credentials or private keys.
-- Use strong, randomly generated webhook secrets.
-- Restrict database and Redis access to trusted services.
-- Configure CORS for explicitly trusted frontend origins.
-- Protect administrative and retry operations with appropriate authentication and authorization.
-- Use HTTPS for public endpoints and downstream delivery.
-- Avoid logging secrets or unnecessarily exposing sensitive webhook payloads.
-- Keep dependencies and deployment environments updated.
+- Store secrets in environment variables or a secret manager, and never commit credentials.
+- Use long, randomly generated values for `WEBHOOK_SECRET`, `DELIVERY_SECRET` and `ADMIN_TOKEN`.
+- Restrict PostgreSQL and Redis access to trusted services.
+- Serve the API and the downstream receiver over HTTPS.
+- Avoid logging secrets or unnecessarily exposing webhook payloads.
+- Keep dependencies and runtime environments up to date.
 
-Local demonstration components may intentionally use simplified security settings. They must not be assumed safe for production without additional controls.
+The local Docker Compose file and the demo receiver use simplified settings and must not be assumed safe for production.
+
+## Known Limitations
+
+Operator access is a single shared bearer token without roles or users, and Relay is single-tenant. These are documented design limits; see the _Limitations_ section of the [README](README.md#limitations).
 
 ## Disclosure
 
-Please coordinate public disclosure with the maintainer whenever possible.
+Once a vulnerability has been investigated and a fix or mitigation is available, the maintainer may publish a security advisory describing the issue, its impact and the recommended upgrade or mitigation.
 
-Once a vulnerability has been investigated and a fix or mitigation is available, the maintainer may publish a security advisory describing the issue, its impact, and the recommended upgrade or mitigation.
-
-## Limitations
-
-Relay is an open-source engineering project. Security reviews, fixes, and responses are provided on a best-effort basis.
-
-The existence of this policy does not constitute a guarantee that Relay is free of vulnerabilities or suitable for every production environment.
+This policy is not a guarantee that Relay is free of vulnerabilities or suitable for every production environment.

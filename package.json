@@ -1,14 +1,23 @@
 {
   "name": "relay",
   "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "description": "Webhook reliability platform: signed ingestion, transactional outbox, retries with backoff, dead-letter queue and idempotent delivery.",
+  "author": "Dieu Merci Ndenga",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dieu-Merci-Ndenga/relay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dieu-Merci-Ndenga/relay/issues"
+  },
+  "homepage": "https://github.com/Dieu-Merci-Ndenga/relay#readme",
   "scripts": {
     "build": "nest build",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

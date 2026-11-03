@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible defect
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Follow [SECURITY.md](https://github.com/Dieu-Merci-Ndenga/relay/blob/main/SECURITY.md) instead.
+        Remove secrets, tokens and personal data from logs and examples.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or test output
+      render: shell
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node.js, PostgreSQL and Redis versions, and how Relay is deployed.
