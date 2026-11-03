@@ -38,6 +38,7 @@ export class InMemoryEventStore implements EventStore {
           eventId: stored.eventId,
           source: stored.source,
           payload: stored.payload,
+          expiresAt: stored.expiresAt,
         }
       : undefined;
   }
@@ -71,7 +72,12 @@ export class InMemoryEventStore implements EventStore {
       .filter((event) => !event.enqueuedAt && event.receivedAt <= cutoff)
       .sort((a, b) => a.receivedAt - b.receivedAt)
       .slice(0, limit)
-      .map(({ eventId, source, payload }) => ({ eventId, source, payload }));
+      .map(({ eventId, source, payload, expiresAt }) => ({
+        eventId,
+        source,
+        payload,
+        expiresAt,
+      }));
   }
 
   async countPendingEnqueue(): Promise<number> {
@@ -87,14 +93,18 @@ export class InMemoryEventStore implements EventStore {
   }
 
   async markDeadLetter(deadLetter: DeadLetter): Promise<void> {
+    const normalized = {
+      ...deadLetter,
+      status: deadLetter.status ?? 'DEAD_LETTERED',
+    };
     const existingIndex = this.deadLetters.findIndex(
-      (item) => keyOf(item) === keyOf(deadLetter),
+      (item) => keyOf(item) === keyOf(normalized),
     );
     if (existingIndex >= 0) {
-      this.deadLetters[existingIndex] = deadLetter;
+      this.deadLetters[existingIndex] = normalized;
       return;
     }
-    this.deadLetters.push(deadLetter);
+    this.deadLetters.push(normalized);
   }
 
   async getDeadLetter(key: EventKey): Promise<DeadLetter | undefined> {

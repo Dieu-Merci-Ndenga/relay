@@ -9,19 +9,22 @@ export type EventKey = {
 
 export type WebhookEvent = EventKey & {
   payload: unknown;
+  expiresAt?: string;
 };
 
 export type DeliveryAttempt = EventKey & {
   attemptNumber: number;
-  status: 'delivered' | 'failed';
+  status: 'delivered' | 'failed' | 'expired';
   httpStatus?: number;
   error?: string;
+  errorCause?: string;
   durationMs: number;
   createdAt?: string;
 };
 
 export type DeadLetter = EventKey & {
   reason: string;
+  status?: 'DEAD_LETTERED' | 'EXPIRED';
 };
 
 export interface EventStore {

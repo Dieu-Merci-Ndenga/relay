@@ -25,8 +25,9 @@ Relay is designed around **at-least-once delivery** and explicit idempotency. Ex
 - Signed outbound deliveries (HMAC-SHA256) with timeout and no redirects.
 - Asynchronous delivery through Redis and BullMQ, with a dedicated retry queue.
 - Prometheus metrics on `/metrics`.
-- Exponential backoff with up to five delivery attempts.
-- Delivery history including status, HTTP status, error, duration, and timestamp.
+- Exponential backoff with configurable jitter and up to five delivery attempts.
+- Optional per-source event TTL with expired events routed to the DLQ.
+- Delivery history including status, HTTP status, error cause, duration, and timestamp.
 - Dead-letter queue after the retry policy is exhausted.
 - Manual retry for dead-lettered events.
 - Graceful recovery when the downstream receiver becomes available again.
@@ -131,7 +132,13 @@ x-relay-source: stripe
 - **Retry queue:** first attempts run on `relay-deliveries`, retries on a
   separate delayed `relay-retries` queue, so a failing receiver never delays
   new events. Tunables: `DELIVERY_MAX_ATTEMPTS` (5), `DELIVERY_BACKOFF_MS`
-  (1000), `DELIVERY_CONCURRENCY` (10), `RETRY_CONCURRENCY` (5).
+  (1000), `DELIVERY_BACKOFF_JITTER` (0.2, a symmetric 20% range),
+  `DELIVERY_CONCURRENCY` (10), `RETRY_CONCURRENCY` (5).
+- **Event expiry:** set `EVENT_TTL_MS_BY_SOURCE` to a JSON object mapping
+  source names to positive TTLs in milliseconds, for example
+  `{"stripe":3600000,"otp-service":300000}`. Expiry is fixed when an event
+  is first accepted, so duplicate requests cannot extend it. Expired events
+  are marked `EXPIRED`, are not delivered again, and cannot be manually retried.
 - **Schema migration:** existing databases are migrated automatically and
   idempotently at startup (composite `(source, event_id)` keys).
 
@@ -235,19 +242,15 @@ The demo receiver is intentionally open for failure simulation and is not intend
 ```bash
 npm test -- --runInBand
 npm run test:e2e -- --runInBand
+npm run test:integration
 npm run build
 npm run lint
 ```
 
-Coverage at the time of writing: 22 unit tests (signatures, ids, secrets,
-admin guard, source-scoped events, outbox sweeper, delivery processor and
-retry scheduling, metrics auth, issue #5 regressions) and 2 end-to-end tests.
-The unit tests run against the in-memory store and queue
-(`NODE_ENV=test`); the PostgreSQL store, the schema migration and the BullMQ
-queues are not covered by automated tests. They were verified manually
-against PostgreSQL 16 and Redis 7: legacy-schema migration, outbox recovery,
-retry queue, dead letter and manual retry, outbound signature, `/metrics`
-and the admin token.
+The unit and end-to-end suites use the in-memory store and queue
+(`NODE_ENV=test`). `npm run test:integration` starts PostgreSQL 16 and Redis 7
+with Testcontainers and exercises persistence, queue retry scheduling, and
+receiver timeout recovery; Docker must be available.
 
 ## Limitations
 
@@ -261,8 +264,8 @@ Relay is a single-tenant webhook relay, not a full webhook platform.
 - **At-least-once delivery:** the outbox and retries can deliver an event more
   than once in rare cases (for example a crash after the receiver answered).
   Receivers should deduplicate on `x-relay-event-id` and `x-relay-source`.
-- **Limited attempt history:** only status, HTTP status, error and duration are
-  stored, not the receiver's response body or headers.
+- **Limited attempt history:** status, HTTP status, error, cause and duration
+  are stored, not the receiver's response body or headers.
 - **One global retry policy:** no per-endpoint settings, no automatic
   disabling of an endpoint that keeps failing, and no alerting. Use the
   metrics for alerts.
@@ -282,7 +285,9 @@ Relay is a single-tenant webhook relay, not a full webhook platform.
 - **Reliability:** transactional outbox with sweeper, separate retry queue,
   source-scoped event ids (automatic schema migration), duplicate webhooks
   re-enqueued unless already delivered (issue #5).
-- **Delivery:** signed outbound requests, timeout, no redirects.
+- **Delivery:** signed outbound requests, timeout, no redirects, jittered
+  exponential retries, per-source TTL with `EXPIRED` dead letters, and fetch
+  error causes in attempt history.
 - **Observability:** Prometheus `/metrics`.
 - **Security:** production secrets enforced, id validation, security headers,
   `ADMIN_TOKEN` on operator routes.

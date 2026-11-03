@@ -17,6 +17,32 @@ import { isValidId } from './config/secrets';
 import { MetricsService } from './metrics/metrics.service';
 import { safeEqual } from './signature';
 
+function ttlForSourceMs(source: string): number | undefined {
+  const raw = process.env.EVENT_TTL_MS_BY_SOURCE;
+  if (!raw) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('EVENT_TTL_MS_BY_SOURCE must be a JSON object');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('EVENT_TTL_MS_BY_SOURCE must be a JSON object');
+  }
+
+  const ttlMs = (parsed as Record<string, unknown>)[source];
+  if (ttlMs === undefined) {
+    return undefined;
+  }
+  if (typeof ttlMs !== 'number' || !Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
+    throw new Error(`TTL for source ${source} must be a positive integer`);
+  }
+  return ttlMs;
+}
+
 @Controller()
 export class AppController {
   constructor(
@@ -69,10 +95,23 @@ export class AppController {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
+    const ttlMs = ttlForSourceMs(source);
+    let expiresAt: string | undefined;
+    if (ttlMs) {
+      const expiration = new Date(Date.now() + ttlMs);
+      if (!Number.isFinite(expiration.getTime())) {
+        throw new Error(
+          `TTL for source ${source} exceeds the supported date range`,
+        );
+      }
+      expiresAt = expiration.toISOString();
+    }
+
     return this.appService.acceptEvent({
       eventId,
       source,
       payload: request.body,
+      expiresAt,
     });
   }
 

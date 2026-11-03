@@ -55,6 +55,62 @@ describe('AppController', () => {
       expect(deliveryQueue.jobs).toHaveLength(1);
     });
 
+    it('applies the event TTL once and preserves it for duplicate requests', async () => {
+      const request = { rawBody, body: payload } as never;
+      const enqueue = jest.spyOn(deliveryQueue, 'enqueue');
+
+      process.env.EVENT_TTL_MS_BY_SOURCE = '{"stripe":5000}';
+      try {
+        await appController.receiveWebhook(
+          'stripe',
+          'evt_ttl',
+          signature,
+          request,
+        );
+        const expiresAt = enqueue.mock.calls[0][0].expiresAt;
+        process.env.EVENT_TTL_MS_BY_SOURCE = '{"stripe":9000}';
+        await appController.receiveWebhook(
+          'stripe',
+          'evt_ttl',
+          signature,
+          request,
+        );
+
+        expect(expiresAt).toBeDefined();
+        expect(enqueue.mock.calls[1][0].expiresAt).toBe(expiresAt);
+      } finally {
+        delete process.env.EVENT_TTL_MS_BY_SOURCE;
+      }
+    });
+
+    it('rejects invalid source TTL configuration', async () => {
+      const request = { rawBody, body: payload } as never;
+
+      try {
+        process.env.EVENT_TTL_MS_BY_SOURCE = 'null';
+        await expect(
+          appController.receiveWebhook(
+            'stripe',
+            'evt_bad_ttl',
+            signature,
+            request,
+          ),
+        ).rejects.toThrow('EVENT_TTL_MS_BY_SOURCE must be a JSON object');
+
+        process.env.EVENT_TTL_MS_BY_SOURCE = '{"stripe":0}';
+        await expect(
+          appController.receiveWebhook(
+            'stripe',
+            'evt_bad_ttl',
+            signature,
+            request,
+          ),
+        ).rejects.toThrow('TTL for source stripe must be a positive integer');
+      } finally {
+        delete process.env.EVENT_TTL_MS_BY_SOURCE;
+      }
+    });
+
     it('retries queue insertion after a transient failure', async () => {
       const request = { rawBody, body: payload } as never;
       const enqueue = jest
@@ -164,6 +220,7 @@ describe('AppController', () => {
           source: 'stripe',
           eventId: 'evt_failed',
           reason: 'receiver unavailable',
+          status: 'DEAD_LETTERED',
         },
       ]);
     });
@@ -189,6 +246,25 @@ describe('AppController', () => {
       });
       expect(deliveryQueue.jobs).toHaveLength(1);
       expect(deliveryQueue.jobs[0]).toMatchObject({ eventId: 'evt_retry' });
+    });
+
+    it('does not queue manual retries for expired events', async () => {
+      await eventStore.saveIfNew({
+        eventId: 'evt_expired',
+        source: 'stripe',
+        payload: { event: 'otp.created' },
+      });
+      await eventStore.markDeadLetter({
+        source: 'stripe',
+        eventId: 'evt_expired',
+        reason: 'Event expired before delivery',
+        status: 'EXPIRED',
+      });
+
+      await expect(
+        appController.retryEvent('stripe', 'evt_expired'),
+      ).rejects.toThrow('Expired events cannot be retried');
+      expect(deliveryQueue.jobs).toHaveLength(0);
     });
 
     it('keeps events with the same id from different sources apart', async () => {

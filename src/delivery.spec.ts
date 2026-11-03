@@ -2,7 +2,10 @@ import { createHmac } from 'node:crypto';
 import { InMemoryEventStore } from './events/in-memory-event.store';
 import { InMemoryDeliveryQueue } from './delivery/in-memory-delivery.queue';
 import { MetricsService } from './metrics/metrics.service';
-import { DeliveryProcessor } from './delivery/delivery-processor';
+import {
+  backoffDelayMs,
+  DeliveryProcessor,
+} from './delivery/delivery-processor';
 import { OutboxSweeper } from './delivery/outbox-sweeper';
 import {
   DeliveryJob,
@@ -39,12 +42,17 @@ describe('DeliveryProcessor', () => {
     await store.saveIfNew({ ...job });
   });
 
-  const run = (fetchFn: jest.Mock, j: DeliveryJob = job, sched = scheduler) =>
+  const run = (
+    fetchFn: jest.Mock,
+    j: DeliveryJob = job,
+    sched = scheduler,
+    deliveryConfig = config,
+  ) =>
     new DeliveryProcessor(
       store,
       sched,
       new MetricsService(),
-      config,
+      deliveryConfig,
       fetchFn,
     ).process(j, {
       jobId: 'j',
@@ -70,9 +78,16 @@ describe('DeliveryProcessor', () => {
     await run(jest.fn().mockResolvedValue({ ok: false, status: 503 }));
 
     expect(scheduled).toHaveLength(1);
-    expect(scheduled[0].delay).toBe(100);
+    expect(scheduled[0].delay).toBeGreaterThanOrEqual(80);
+    expect(scheduled[0].delay).toBeLessThanOrEqual(120);
     expect(scheduled[0].job.attempt).toBe(2);
     expect(await store.getDeadLetter(job)).toBeUndefined();
+  });
+
+  it('applies configurable jitter to exponential retry delays', () => {
+    expect(backoffDelayMs(3, 100, 0.2, () => 0)).toBe(320);
+    expect(backoffDelayMs(3, 100, 0.2, () => 1)).toBe(480);
+    expect(backoffDelayMs(3, 100, 0, () => 0)).toBe(400);
   });
 
   it('dead-letters once max attempts are reached', async () => {
@@ -83,6 +98,82 @@ describe('DeliveryProcessor', () => {
 
     expect(scheduled).toHaveLength(0);
     expect(await store.getDeadLetter(job)).toBeTruthy();
+  });
+
+  it('expires an event before delivery without making a network request', async () => {
+    const fetchFn = jest.fn();
+    const expiredJob = {
+      ...job,
+      expiresAt: new Date(Date.now() - 1).toISOString(),
+    };
+
+    await run(fetchFn, expiredJob);
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    await expect(store.getAttempts(job)).resolves.toMatchObject([
+      { status: 'expired', error: 'Event expired before delivery' },
+    ]);
+    await expect(store.getDeadLetter(job)).resolves.toMatchObject({
+      status: 'EXPIRED',
+    });
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it('expires a successful response that arrives after the event deadline', async () => {
+    const expiringJob = {
+      ...job,
+      expiresAt: new Date(Date.now() + 10).toISOString(),
+    };
+    const fetchFn = jest
+      .fn()
+      .mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ ok: true, status: 200 }), 30),
+          ),
+      );
+
+    await run(fetchFn, expiringJob);
+
+    await expect(store.getAttempts(job)).resolves.toMatchObject([
+      { status: 'expired', error: 'Event expired before successful delivery' },
+    ]);
+    await expect(store.getDeadLetter(job)).resolves.toMatchObject({
+      status: 'EXPIRED',
+    });
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it('expires instead of scheduling a retry beyond the event deadline', async () => {
+    const expiringJob = {
+      ...job,
+      expiresAt: new Date(Date.now() + 10_000).toISOString(),
+    };
+    await run(
+      jest.fn().mockResolvedValue({ ok: false, status: 503 }),
+      expiringJob,
+      scheduler,
+      { ...config, backoffBaseMs: 20_000, backoffJitterRatio: 0 },
+    );
+
+    expect(scheduled).toHaveLength(0);
+    await expect(store.getDeadLetter(job)).resolves.toMatchObject({
+      status: 'EXPIRED',
+      reason: 'Event expires before the next retry',
+    });
+  });
+
+  it('records a fetch error cause alongside its message', async () => {
+    const cause = Object.assign(new Error('connect failed'), {
+      code: 'ECONNREFUSED',
+    });
+    await run(
+      jest.fn().mockRejectedValue(new TypeError('fetch failed', { cause })),
+    );
+
+    await expect(store.getAttempts(job)).resolves.toMatchObject([
+      { error: 'fetch failed', errorCause: 'ECONNREFUSED' },
+    ]);
   });
 
   it('dead-letters when the retry cannot be scheduled', async () => {

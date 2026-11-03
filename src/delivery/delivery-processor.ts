@@ -9,6 +9,7 @@ export type DeliveryConfig = {
   secret: string;
   maxAttempts: number;
   backoffBaseMs: number;
+  backoffJitterRatio?: number;
   timeoutMs?: number;
 };
 
@@ -28,9 +29,58 @@ export type JobContext = {
 
 type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
-// Exponential backoff: delay, 2x delay, 4x delay, ...
-export function backoffDelayMs(failedAttempt: number, baseMs: number): number {
-  return baseMs * 2 ** (failedAttempt - 1);
+function errorCause(error: unknown): string | undefined {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (cause === undefined) {
+    return undefined;
+  }
+  if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+    const code = cause.code;
+    if (typeof code === 'string') {
+      return code;
+    }
+  }
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  if (typeof cause === 'object' && cause !== null) {
+    const message = 'message' in cause ? cause.message : undefined;
+    if (typeof message === 'string') {
+      return message;
+    }
+    try {
+      return JSON.stringify(cause);
+    } catch {
+      return '[unserializable cause]';
+    }
+  }
+  if (
+    typeof cause === 'number' ||
+    typeof cause === 'boolean' ||
+    typeof cause === 'bigint'
+  ) {
+    return cause.toString();
+  }
+  if (typeof cause === 'string') {
+    return cause;
+  }
+  return typeof cause === 'symbol'
+    ? (cause.description ?? 'Symbol')
+    : 'Unknown cause';
+}
+
+// Exponential backoff with symmetric jitter to spread synchronized retries.
+export function backoffDelayMs(
+  failedAttempt: number,
+  baseMs: number,
+  jitterRatio = 0.2,
+  random = Math.random,
+): number {
+  const exponentialDelay = baseMs * 2 ** (failedAttempt - 1);
+  const boundedJitter = Math.max(0, Math.min(jitterRatio, 1));
+  const jitter = 1 - boundedJitter + random() * boundedJitter * 2;
+
+  return Math.round(exponentialDelay * jitter);
 }
 
 export class DeliveryProcessor {
@@ -52,10 +102,34 @@ export class DeliveryProcessor {
 
     this.metrics.recordQueueLag(kind, context.queueLagMs);
 
+    const expiresAt = job.expiresAt ? Date.parse(job.expiresAt) : undefined;
+    if (expiresAt !== undefined && expiresAt <= startedAt) {
+      const reason = 'Event expired before delivery';
+      this.metrics.recordAttempt(job.source, kind, 'expired', 0);
+      await this.eventStore.recordAttempt({
+        ...key,
+        attemptNumber: attempt,
+        status: 'expired',
+        error: reason,
+        durationMs: 0,
+      });
+      await this.deadLetter(key, reason, 'EXPIRED');
+      return;
+    }
+
     // The signature covers exactly the bytes sent, like inbound webhooks.
     const body = JSON.stringify(job.payload);
-    let httpStatus: number | undefined;
     let failure: string | undefined;
+    let failureCause: string | undefined;
+    let httpStatus: number | undefined;
+    let expiredDuringAttempt = false;
+    const requestTimeoutMs =
+      expiresAt === undefined
+        ? (this.config.timeoutMs ?? 10_000)
+        : Math.max(
+            1,
+            Math.min(this.config.timeoutMs ?? 10_000, expiresAt - Date.now()),
+          );
 
     try {
       const response = await this.fetchFn(this.config.url, {
@@ -69,32 +143,43 @@ export class DeliveryProcessor {
         body,
         // A receiver must not hang a worker or bounce us to another host.
         redirect: 'manual',
-        signal: AbortSignal.timeout(this.config.timeoutMs ?? 10_000),
+        signal: AbortSignal.timeout(requestTimeoutMs),
       });
       httpStatus = response.status;
 
       if (!response.ok) {
         failure = `Delivery failed with HTTP ${response.status}`;
+      } else if (expiresAt !== undefined && Date.now() >= expiresAt) {
+        failure = 'Event expired before successful delivery';
+        expiredDuringAttempt = true;
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
+      failureCause = errorCause(error);
+      expiredDuringAttempt = expiresAt !== undefined && Date.now() >= expiresAt;
     }
 
     const durationMs = Date.now() - startedAt;
     const outcome = failure === undefined ? 'delivered' : 'failed';
-    this.metrics.recordAttempt(job.source, kind, outcome, durationMs);
+    const attemptStatus = expiredDuringAttempt ? 'expired' : outcome;
+    this.metrics.recordAttempt(job.source, kind, attemptStatus, durationMs);
 
     await this.eventStore.recordAttempt({
       ...key,
       attemptNumber: attempt,
-      status: outcome,
+      status: attemptStatus,
       httpStatus,
       error: failure,
+      errorCause: failureCause,
       durationMs,
     });
 
     if (failure === undefined) {
       await this.eventStore.clearDeadLetter(key);
+      return;
+    }
+    if (expiredDuringAttempt) {
+      await this.deadLetter(key, failure, 'EXPIRED');
       return;
     }
 
@@ -116,12 +201,26 @@ export class DeliveryProcessor {
 
     const origin = job.origin ?? context.jobId;
     const next = attempt + 1;
+    const delayMs = backoffDelayMs(
+      attempt,
+      this.config.backoffBaseMs,
+      this.config.backoffJitterRatio,
+    );
+
+    if (job.expiresAt && Date.now() + delayMs >= Date.parse(job.expiresAt)) {
+      await this.deadLetter(
+        key,
+        'Event expires before the next retry',
+        'EXPIRED',
+      );
+      return;
+    }
 
     try {
       await this.scheduler.scheduleRetry(
         { ...job, attempt: next, origin },
         retryJobId(origin, next),
-        backoffDelayMs(attempt, this.config.backoffBaseMs),
+        delayMs,
       );
     } catch (error) {
       // Without a scheduled retry the event would be silently lost, so it is
@@ -137,8 +236,9 @@ export class DeliveryProcessor {
   private async deadLetter(
     key: { source: string; eventId: string },
     reason: string,
+    status: 'DEAD_LETTERED' | 'EXPIRED' = 'DEAD_LETTERED',
   ): Promise<void> {
-    await this.eventStore.markDeadLetter({ ...key, reason });
+    await this.eventStore.markDeadLetter({ ...key, reason, status });
     this.metrics.recordDeadLetter(key.source);
   }
 }

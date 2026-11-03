@@ -13,6 +13,11 @@ const intFromEnv = (name: string, fallback: number): number => {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
+const ratioFromEnv = (name: string, fallback: number): number => {
+  const value = Number.parseFloat(process.env[name] ?? '');
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
+};
+
 @Injectable()
 export class BullMqDeliveryWorker
   implements OnModuleInit, OnModuleDestroy, RetryScheduler
@@ -59,6 +64,7 @@ export class BullMqDeliveryWorker
         secret: deliverySecret(),
         maxAttempts: intFromEnv('DELIVERY_MAX_ATTEMPTS', 5),
         backoffBaseMs: intFromEnv('DELIVERY_BACKOFF_MS', 1000),
+        backoffJitterRatio: ratioFromEnv('DELIVERY_BACKOFF_JITTER', 0.2),
         timeoutMs: intFromEnv('DELIVERY_TIMEOUT_MS', 10_000),
       },
     );

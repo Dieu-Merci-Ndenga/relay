@@ -88,7 +88,7 @@ export class MetricsService {
   recordAttempt(
     source: string,
     kind: AttemptKind,
-    outcome: 'delivered' | 'failed',
+    outcome: 'delivered' | 'failed' | 'expired',
     durationMs: number,
   ): void {
     this.deliveryAttempts.inc({ source, kind, outcome });

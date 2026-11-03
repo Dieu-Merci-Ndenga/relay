@@ -32,12 +32,15 @@ export class AppService {
 
   async acceptEvent(event: WebhookEvent) {
     const isNew = await this.eventStore.saveIfNew(event);
+    const storedEvent = isNew
+      ? event
+      : ((await this.eventStore.getEvent(event)) ?? event);
 
     // A duplicate may mean an earlier request stored the event but failed to
     // enqueue it, so enqueueing is retried unless delivery already succeeded.
     // The queue deduplicates by job id, which keeps this safe to repeat.
     if (isNew || !(await this.eventStore.hasSuccessfulDelivery(event))) {
-      await this.deliveryQueue.enqueue(event);
+      await this.deliveryQueue.enqueue(storedEvent);
       await this.eventStore.markEnqueued(event);
     }
 
@@ -57,6 +60,9 @@ export class AppService {
 
     if (!event || !deadLetter) {
       throw new NotFoundException('Event is not in the dead-letter queue');
+    }
+    if (deadLetter.status === 'EXPIRED') {
+      throw new ConflictException('Expired events cannot be retried');
     }
 
     await this.deliveryQueue.enqueue(

@@ -45,7 +45,11 @@ function renderDeadLetters() {
   table.hidden = false;
   state.deadLetters.forEach((deadLetter) => {
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${escapeHtml(deadLetter.source)}</td><td><code>${escapeHtml(deadLetter.eventId)}</code></td><td>${escapeHtml(deadLetter.reason)}</td><td class="action-cell"></td>`;
+    row.innerHTML = `<td>${escapeHtml(deadLetter.source)}</td><td><code>${escapeHtml(deadLetter.eventId)}</code></td><td>${escapeHtml(deadLetter.status || "DEAD_LETTERED")}</td><td>${escapeHtml(deadLetter.reason)}</td><td class="action-cell"></td>`;
+    if (deadLetter.status === "EXPIRED") {
+      rows.append(row);
+      return;
+    }
     const button = document.createElement("button");
     button.className = "button small";
     button.textContent = "Retry";
@@ -106,8 +110,9 @@ async function loadAttempts(event) {
     rows.replaceChildren();
     attempts.forEach((attempt) => {
       const row = document.createElement("tr");
-      const status = attempt.status === "delivered" ? "delivered" : "failed";
-      row.innerHTML = `<td>${formatDate(attempt.createdAt)}</td><td>#${attempt.attemptNumber}</td><td><span class="status ${status}">${escapeHtml(attempt.status)}</span></td><td>${attempt.httpStatus ?? "—"}</td><td>${attempt.durationMs} ms</td><td>${escapeHtml(attempt.error || "—")}</td>`;
+      const status = attempt.status === "delivered" || attempt.status === "expired" ? attempt.status : "failed";
+      const error = attempt.errorCause ? `${attempt.error || "—"} (${attempt.errorCause})` : attempt.error || "—";
+      row.innerHTML = `<td>${formatDate(attempt.createdAt)}</td><td>#${attempt.attemptNumber}</td><td><span class="status ${status}">${escapeHtml(attempt.status)}</span></td><td>${attempt.httpStatus ?? "—"}</td><td>${attempt.durationMs} ms</td><td>${escapeHtml(error)}</td>`;
       rows.append(row);
     });
     table.hidden = false;

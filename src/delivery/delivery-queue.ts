@@ -5,6 +5,7 @@ export type DeliveryJob = {
   eventId: string;
   source: string;
   payload: unknown;
+  expiresAt?: string;
   // 1-based number of the delivery attempt this job performs.
   attempt?: number;
   // Id of the job that started this delivery cycle; keeps retry job ids stable.

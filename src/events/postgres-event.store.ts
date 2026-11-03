@@ -22,12 +22,17 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
 
     const result = await this.pool.query(
       `
-        INSERT INTO webhook_events (event_id, source, payload)
-        VALUES ($1, $2, $3::jsonb)
+        INSERT INTO webhook_events (event_id, source, payload, expires_at)
+        VALUES ($1, $2, $3::jsonb, $4::timestamptz)
         ON CONFLICT (source, event_id) DO NOTHING
         RETURNING event_id
       `,
-      [event.eventId, event.source, JSON.stringify(event.payload)],
+      [
+        event.eventId,
+        event.source,
+        JSON.stringify(event.payload),
+        event.expiresAt ?? null,
+      ],
     );
 
     return result.rowCount === 1;
@@ -74,7 +79,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     await this.ensureSchema();
     const result = await this.pool.query(
       `
-        SELECT event_id, source, payload
+        SELECT event_id, source, payload, expires_at
         FROM webhook_events
         WHERE enqueued_at IS NULL
           AND received_at <= NOW() - ($1 * INTERVAL '1 millisecond')
@@ -87,6 +92,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       eventId: row.event_id,
       source: row.source,
       payload: row.payload,
+      expiresAt: row.expires_at?.toISOString(),
     }));
   }
 
@@ -103,8 +109,8 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     await this.pool.query(
       `
         INSERT INTO delivery_attempts
-          (source, event_id, attempt_number, status, http_status, error, duration_ms)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+          (source, event_id, attempt_number, status, http_status, error, error_cause, duration_ms)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `,
       [
         attempt.source,
@@ -113,6 +119,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
         attempt.status,
         attempt.httpStatus ?? null,
         attempt.error ?? null,
+        attempt.errorCause ?? null,
         attempt.durationMs,
       ],
     );
@@ -121,12 +128,17 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
   async getEvent(key: EventKey): Promise<WebhookEvent | undefined> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT event_id, source, payload FROM webhook_events WHERE source = $1 AND event_id = $2',
+      'SELECT event_id, source, payload, expires_at FROM webhook_events WHERE source = $1 AND event_id = $2',
       [key.source, key.eventId],
     );
     const row = result.rows[0];
     return row
-      ? { eventId: row.event_id, source: row.source, payload: row.payload }
+      ? {
+          eventId: row.event_id,
+          source: row.source,
+          payload: row.payload,
+          expiresAt: row.expires_at?.toISOString(),
+        }
       : undefined;
   }
 
@@ -134,23 +146,34 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     await this.ensureSchema();
     await this.pool.query(
       `
-        INSERT INTO dead_letters (source, event_id, reason)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (source, event_id) DO UPDATE SET reason = EXCLUDED.reason
+        INSERT INTO dead_letters (source, event_id, reason, status)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (source, event_id) DO UPDATE
+          SET reason = EXCLUDED.reason, status = EXCLUDED.status
       `,
-      [deadLetter.source, deadLetter.eventId, deadLetter.reason],
+      [
+        deadLetter.source,
+        deadLetter.eventId,
+        deadLetter.reason,
+        deadLetter.status ?? 'DEAD_LETTERED',
+      ],
     );
   }
 
   async getDeadLetter(key: EventKey): Promise<DeadLetter | undefined> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT source, event_id, reason FROM dead_letters WHERE source = $1 AND event_id = $2',
+      'SELECT source, event_id, reason, status FROM dead_letters WHERE source = $1 AND event_id = $2',
       [key.source, key.eventId],
     );
     const row = result.rows[0];
     return row
-      ? { source: row.source, eventId: row.event_id, reason: row.reason }
+      ? {
+          source: row.source,
+          eventId: row.event_id,
+          reason: row.reason,
+          status: row.status,
+        }
       : undefined;
   }
 
@@ -166,7 +189,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     await this.ensureSchema();
     const result = await this.pool.query(
       `
-        SELECT source, event_id, attempt_number, status, http_status, error, duration_ms, created_at
+        SELECT source, event_id, attempt_number, status, http_status, error, error_cause, duration_ms, created_at
         FROM delivery_attempts
         WHERE source = $1 AND event_id = $2
         ORDER BY created_at ASC, id ASC
@@ -180,6 +203,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       status: row.status,
       httpStatus: row.http_status ?? undefined,
       error: row.error ?? undefined,
+      errorCause: row.error_cause ?? undefined,
       durationMs: row.duration_ms,
       createdAt: row.created_at.toISOString(),
     }));
@@ -188,12 +212,13 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
   async listDeadLetters(): Promise<DeadLetter[]> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      'SELECT source, event_id, reason FROM dead_letters ORDER BY failed_at DESC',
+      'SELECT source, event_id, reason, status FROM dead_letters ORDER BY failed_at DESC',
     );
     return result.rows.map((row) => ({
       source: row.source,
       eventId: row.event_id,
       reason: row.reason,
+      status: row.status,
     }));
   }
 
@@ -226,6 +251,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           payload JSONB NOT NULL,
           received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           enqueued_at TIMESTAMPTZ,
+          expires_at TIMESTAMPTZ,
           PRIMARY KEY (source, event_id)
         );
 
@@ -237,6 +263,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           status TEXT NOT NULL,
           http_status INTEGER,
           error TEXT,
+          error_cause TEXT,
           duration_ms INTEGER NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           FOREIGN KEY (source, event_id) REFERENCES webhook_events(source, event_id)
@@ -246,10 +273,15 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           source TEXT NOT NULL,
           event_id TEXT NOT NULL,
           reason TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'DEAD_LETTERED',
           failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (source, event_id),
           FOREIGN KEY (source, event_id) REFERENCES webhook_events(source, event_id)
         );
+
+        ALTER TABLE webhook_events ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+        ALTER TABLE delivery_attempts ADD COLUMN IF NOT EXISTS error_cause TEXT;
+        ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'DEAD_LETTERED';
 
         DO $$
         BEGIN
