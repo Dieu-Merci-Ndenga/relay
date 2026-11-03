@@ -43,6 +43,28 @@ services:
     staticPublishPath: ./frontend
 
   - type: web
+    name: relay-landing
+    runtime: static
+    buildCommand: echo "Static landing page ready"
+    staticPublishPath: ./landing
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      - path: /*.png
+        name: Cache-Control
+        value: public, max-age=604800
+
+  - type: web
     name: relay-receiver
     runtime: node
     plan: free

@@ -327,9 +327,14 @@ Relay is a single-tenant webhook relay, not a full webhook platform.
 
 ## Deployment on Render
 
-[render.yaml](render.yaml) defines the API service, the frontend static site,
-the demo receiver, PostgreSQL, and Redis. Render provides `PORT`,
-`DATABASE_URL`, and `REDIS_URL` through the Blueprint.
+[render.yaml](render.yaml) defines the API service, the console static site,
+the landing page static site, the demo receiver, PostgreSQL, and Redis. Render
+provides `PORT`, `DATABASE_URL`, and `REDIS_URL` through the Blueprint.
+
+The landing page lives in [`landing/`](landing/): plain HTML, CSS and a small
+script, with no build step. Preview it locally with `npx serve landing`. Once
+deployed, update the `og:image` URL in `landing/index.html` if the repository
+or branch changes.
 
 Set these secret or service-specific values in Render:
 
