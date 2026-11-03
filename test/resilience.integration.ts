@@ -119,6 +119,37 @@ describe('resilience integration', () => {
     await expect(eventStore.getDeadLetter(event)).resolves.toMatchObject({
       status: 'EXPIRED',
     });
+    await eventStore.markEnqueued(event);
+  });
+
+  it('claims pending outbox rows once across concurrent PostgreSQL instances', async () => {
+    const secondStore = new PostgresEventStore();
+    const events = Array.from({ length: 8 }, (_, index) => ({
+      source: 'integration-claim',
+      eventId: `outbox-claim-${index}`,
+      payload: { index },
+    }));
+
+    try {
+      await Promise.all(events.map((event) => eventStore.saveIfNew(event)));
+      const [firstClaims, secondClaims] = await Promise.all([
+        eventStore.claimPendingEnqueue(0, events.length),
+        secondStore.claimPendingEnqueue(0, events.length),
+      ]);
+      const firstIds = new Set(firstClaims.map((event) => event.eventId));
+      const secondIds = new Set(secondClaims.map((event) => event.eventId));
+      const combinedIds = new Set([...firstIds, ...secondIds]);
+
+      expect([...firstIds].filter((eventId) => secondIds.has(eventId))).toEqual(
+        [],
+      );
+      expect(combinedIds).toEqual(
+        new Set(events.map((event) => event.eventId)),
+      );
+    } finally {
+      await Promise.all(events.map((event) => eventStore.markEnqueued(event)));
+      await secondStore.onModuleDestroy();
+    }
   });
 
   it('recovers delayed retry scheduling after Redis pauses command processing', async () => {
@@ -131,19 +162,12 @@ describe('resilience integration', () => {
       maxRetriesPerRequest: null,
     });
     let retryInspector: Queue<DeliveryJob> | undefined;
-    const pauseCommand = redisContainer.exec([
-      'redis-cli',
-      'CLIENT',
-      'PAUSE',
-      '800',
-      'ALL',
-    ]);
+    await redisContainer.exec(['redis-cli', 'CLIENT', 'PAUSE', '800', 'ALL']);
 
     try {
       retryInspector = new Queue<DeliveryJob>(RETRY_QUEUE_NAME, {
         connection: inspectorConnection,
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
       const startedAt = Date.now();
       await retryScheduler.scheduleRetry(
         job,
@@ -151,12 +175,10 @@ describe('resilience integration', () => {
         60_000,
       );
       expect(Date.now() - startedAt).toBeGreaterThan(300);
-      await pauseCommand;
       await expect(
         retryInspector.getJob(retryJobId('redis-pause', 2)),
       ).resolves.toMatchObject({ data: job });
     } finally {
-      await pauseCommand;
       await retryInspector?.close();
       await inspectorConnection.quit();
     }

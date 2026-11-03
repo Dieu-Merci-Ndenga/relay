@@ -210,6 +210,24 @@ describe('OutboxSweeper', () => {
     await expect(sweeper.sweepOnce()).resolves.toBe(0);
     await expect(store.countPendingEnqueue()).resolves.toBe(0);
   });
+
+  it('releases a claimed event after enqueue fails', async () => {
+    const store = new InMemoryEventStore();
+    const queue = new InMemoryDeliveryQueue();
+    await store.saveIfNew({ ...job });
+    jest
+      .spyOn(queue, 'enqueue')
+      .mockRejectedValueOnce(new Error('Redis unavailable'));
+    const sweeper = new OutboxSweeper(store, queue, new MetricsService(), {
+      intervalMs: 0,
+      graceMs: 0,
+      batchSize: 10,
+    });
+
+    await expect(sweeper.sweepOnce()).resolves.toBe(0);
+    await expect(sweeper.sweepOnce()).resolves.toBe(1);
+    expect(queue.jobs.map((queued) => queued.eventId)).toEqual(['evt_1']);
+  });
 });
 
 describe('job ids', () => {

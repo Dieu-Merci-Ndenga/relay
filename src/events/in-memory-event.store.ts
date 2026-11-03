@@ -4,12 +4,14 @@ import {
   DeliveryAttempt,
   EventKey,
   EventStore,
+  OUTBOX_CLAIM_TIMEOUT_MS,
   WebhookEvent,
 } from './event-store';
 
 type StoredEvent = WebhookEvent & {
   receivedAt: number;
   enqueuedAt?: number;
+  enqueueClaimedAt?: number;
 };
 
 const keyOf = ({ source, eventId }: EventKey) =>
@@ -60,24 +62,43 @@ export class InMemoryEventStore implements EventStore {
     const stored = this.events.get(keyOf(key));
     if (stored) {
       stored.enqueuedAt ??= Date.now();
+      stored.enqueueClaimedAt = undefined;
     }
   }
 
-  async listPendingEnqueue(
+  async claimPendingEnqueue(
     olderThanMs: number,
     limit: number,
   ): Promise<WebhookEvent[]> {
-    const cutoff = Date.now() - olderThanMs;
-    return [...this.events.values()]
-      .filter((event) => !event.enqueuedAt && event.receivedAt <= cutoff)
+    const now = Date.now();
+    const cutoff = now - olderThanMs;
+    const claimCutoff = now - OUTBOX_CLAIM_TIMEOUT_MS;
+    const pending = [...this.events.values()]
+      .filter(
+        (event) =>
+          !event.enqueuedAt &&
+          event.receivedAt <= cutoff &&
+          (event.enqueueClaimedAt === undefined ||
+            event.enqueueClaimedAt <= claimCutoff),
+      )
       .sort((a, b) => a.receivedAt - b.receivedAt)
-      .slice(0, limit)
-      .map(({ eventId, source, payload, expiresAt }) => ({
-        eventId,
-        source,
-        payload,
-        expiresAt,
-      }));
+      .slice(0, limit);
+    for (const event of pending) {
+      event.enqueueClaimedAt = now;
+    }
+    return pending.map(({ eventId, source, payload, expiresAt }) => ({
+      eventId,
+      source,
+      payload,
+      expiresAt,
+    }));
+  }
+
+  async releaseEnqueueClaim(key: EventKey): Promise<void> {
+    const stored = this.events.get(keyOf(key));
+    if (stored && !stored.enqueuedAt) {
+      stored.enqueueClaimedAt = undefined;
+    }
   }
 
   async countPendingEnqueue(): Promise<number> {

@@ -44,7 +44,7 @@ export class OutboxSweeper implements OnModuleInit, OnModuleDestroy {
   }
 
   async sweepOnce(): Promise<number> {
-    const pending = await this.eventStore.listPendingEnqueue(
+    const pending = await this.eventStore.claimPendingEnqueue(
       this.options.graceMs,
       this.options.batchSize,
     );
@@ -61,6 +61,17 @@ export class OutboxSweeper implements OnModuleInit, OnModuleDestroy {
         await this.eventStore.markEnqueued(event);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
+        await this.eventStore
+          .releaseEnqueueClaim(event)
+          .catch((releaseError) => {
+            const releaseDetail =
+              releaseError instanceof Error
+                ? releaseError.message
+                : String(releaseError);
+            this.logger.warn(
+              `Could not release outbox claim for ${event.source}/${event.eventId}: ${releaseDetail}`,
+            );
+          });
         this.logger.warn(
           `Could not re-enqueue ${event.source}/${event.eventId}: ${detail}`,
         );

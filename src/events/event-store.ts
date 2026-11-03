@@ -1,4 +1,5 @@
 export const EVENT_STORE = Symbol('EVENT_STORE');
+export const OUTBOX_CLAIM_TIMEOUT_MS = 60_000;
 
 // An event is identified by its source and the id the source gave it, so two
 // providers can reuse the same event id without colliding.
@@ -35,11 +36,13 @@ export interface EventStore {
   hasSuccessfulDelivery(key: EventKey): Promise<boolean>;
   /** Records that the event reached the delivery queue (outbox acknowledgement). */
   markEnqueued(key: EventKey): Promise<void>;
-  /** Events saved but not acknowledged as enqueued for at least `olderThanMs`. */
-  listPendingEnqueue(
+  /** Atomically claims pending events that are old enough for enqueue recovery. */
+  claimPendingEnqueue(
     olderThanMs: number,
     limit: number,
   ): Promise<WebhookEvent[]>;
+  /** Releases a claim when enqueueing fails, allowing the next sweep to retry. */
+  releaseEnqueueClaim(key: EventKey): Promise<void>;
   countPendingEnqueue(): Promise<number>;
   recordAttempt(attempt: DeliveryAttempt): Promise<void>;
   markDeadLetter(deadLetter: DeadLetter): Promise<void>;

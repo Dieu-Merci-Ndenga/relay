@@ -129,6 +129,9 @@ x-relay-source: stripe
 - **Outbox:** events are stored in PostgreSQL before being queued and marked
   `enqueued_at` once queued. A sweeper re-enqueues events left unqueued (crash
   or Redis outage) after `OUTBOX_GRACE_MS`, every `OUTBOX_SWEEP_INTERVAL_MS`.
+  Multi-instance sweepers claim rows with `FOR UPDATE SKIP LOCKED` and a
+  60-second lease; enqueue failures release the claim immediately, while a
+  crashed sweeper's claim becomes available after the lease expires.
 - **Retry queue:** first attempts run on `relay-deliveries`, retries on a
   separate delayed `relay-retries` queue, so a failing receiver never delays
   new events. Tunables: `DELIVERY_MAX_ATTEMPTS` (5), `DELIVERY_BACKOFF_MS`
@@ -256,7 +259,8 @@ npm run lint
 The unit and end-to-end suites use the in-memory store and queue
 (`NODE_ENV=test`). `npm run test:integration` starts PostgreSQL 16 and Redis 7
 with Testcontainers and exercises persistence, queue retry scheduling, and
-Redis command pauses and receiver timeout recovery; Docker must be available.
+concurrent outbox claims, Redis command pauses, and receiver timeout recovery;
+Docker must be available.
 
 ## Limitations
 

@@ -5,6 +5,7 @@ import {
   DeliveryAttempt,
   EventKey,
   EventStore,
+  OUTBOX_CLAIM_TIMEOUT_MS,
   WebhookEvent,
 } from './event-store';
 
@@ -65,28 +66,42 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
     await this.ensureSchema();
     await this.pool.query(
       `
-        UPDATE webhook_events SET enqueued_at = NOW()
+        UPDATE webhook_events
+        SET enqueued_at = NOW(), enqueue_claimed_at = NULL
         WHERE source = $1 AND event_id = $2 AND enqueued_at IS NULL
       `,
       [key.source, key.eventId],
     );
   }
 
-  async listPendingEnqueue(
+  async claimPendingEnqueue(
     olderThanMs: number,
     limit: number,
   ): Promise<WebhookEvent[]> {
     await this.ensureSchema();
     const result = await this.pool.query(
       `
-        SELECT event_id, source, payload, expires_at
-        FROM webhook_events
-        WHERE enqueued_at IS NULL
-          AND received_at <= NOW() - ($1 * INTERVAL '1 millisecond')
-        ORDER BY received_at ASC
-        LIMIT $2
+        WITH candidates AS (
+          SELECT source, event_id
+          FROM webhook_events
+          WHERE enqueued_at IS NULL
+            AND (
+              enqueue_claimed_at IS NULL
+              OR enqueue_claimed_at <= NOW() - ($3 * INTERVAL '1 millisecond')
+            )
+            AND received_at <= NOW() - ($1 * INTERVAL '1 millisecond')
+          ORDER BY received_at ASC
+          LIMIT $2
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE webhook_events AS events
+        SET enqueue_claimed_at = NOW()
+        FROM candidates
+        WHERE events.source = candidates.source
+          AND events.event_id = candidates.event_id
+        RETURNING events.event_id, events.source, events.payload, events.expires_at
       `,
-      [olderThanMs, limit],
+      [olderThanMs, limit, OUTBOX_CLAIM_TIMEOUT_MS],
     );
     return result.rows.map((row) => ({
       eventId: row.event_id,
@@ -94,6 +109,17 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
       payload: row.payload,
       expiresAt: row.expires_at?.toISOString(),
     }));
+  }
+
+  async releaseEnqueueClaim(key: EventKey): Promise<void> {
+    await this.ensureSchema();
+    await this.pool.query(
+      `
+        UPDATE webhook_events SET enqueue_claimed_at = NULL
+        WHERE source = $1 AND event_id = $2 AND enqueued_at IS NULL
+      `,
+      [key.source, key.eventId],
+    );
   }
 
   async countPendingEnqueue(): Promise<number> {
@@ -251,6 +277,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
           payload JSONB NOT NULL,
           received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           enqueued_at TIMESTAMPTZ,
+          enqueue_claimed_at TIMESTAMPTZ,
           expires_at TIMESTAMPTZ,
           PRIMARY KEY (source, event_id)
         );
@@ -280,6 +307,7 @@ export class PostgresEventStore implements EventStore, OnModuleDestroy {
         );
 
         ALTER TABLE webhook_events ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+        ALTER TABLE webhook_events ADD COLUMN IF NOT EXISTS enqueue_claimed_at TIMESTAMPTZ;
         ALTER TABLE delivery_attempts ADD COLUMN IF NOT EXISTS error_cause TEXT;
         ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'DEAD_LETTERED';
 
