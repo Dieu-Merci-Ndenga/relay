@@ -8,7 +8,7 @@ Relay accepts signed webhook events, persists them safely, delivers them asynchr
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
-  <a href="https://relay-dashboard-nrqs.onrender.com/">
+  <a href="https://relay-landing-d0u6.onrender.com">
     <img src="frontend/img/relay_OpenGraph_banner.png" alt="Relay - Event-Driven Webhook Engine" width="100%">
   </a>
 </p>
