@@ -16,7 +16,7 @@ Search existing issues first. Please include the expected and actual behavior, s
 
 ## Development Setup
 
-Requirements: Node.js 22 or later, npm and Docker.
+Requirements: Node.js 24.9 or later, npm and Docker.
 
 ```bash
 git clone https://github.com/Dieu-Merci-Ndenga/relay.git

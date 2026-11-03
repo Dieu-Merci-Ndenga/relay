@@ -13,6 +13,9 @@
     "url": "https://github.com/Dieu-Merci-Ndenga/relay/issues"
   },
   "homepage": "https://github.com/Dieu-Merci-Ndenga/relay#readme",
+  "engines": {
+    "node": ">=24.9"
+  },
   "scripts": {
     "build": "nest build",
     "deploy": "nest deploy",
