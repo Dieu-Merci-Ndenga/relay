@@ -29,7 +29,7 @@ Relay is designed around **at-least-once delivery** and explicit idempotency. Ex
 - Optional per-source event TTL with expired events routed to the DLQ.
 - Delivery history including status, HTTP status, error cause, duration, and timestamp.
 - Dead-letter queue after the retry policy is exhausted.
-- Manual retry for dead-lettered events.
+- Manual retry for retryable dead-lettered events.
 - Graceful recovery when the downstream receiver becomes available again.
 - Automated unit, end-to-end, and real-world failure/recovery demonstrations.
 
@@ -137,8 +137,14 @@ x-relay-source: stripe
 - **Event expiry:** set `EVENT_TTL_MS_BY_SOURCE` to a JSON object mapping
   source names to positive TTLs in milliseconds, for example
   `{"stripe":3600000,"otp-service":300000}`. Expiry is fixed when an event
-  is first accepted, so duplicate requests cannot extend it. Expired events
-  are marked `EXPIRED`, are not delivered again, and cannot be manually retried.
+  is first accepted, so duplicate requests cannot extend it. Sources not listed
+  in the object have no TTL. Delivery is bounded by the remaining TTL, including
+  while an HTTP request is in flight. If a successful response does not arrive
+  before expiry, the attempt and dead letter are marked `EXPIRED`; expired
+  events cannot be manually retried.
+- **Error diagnostics:** delivery attempts expose both `error` and
+  `errorCause`. For network errors, `errorCause` records the underlying code
+  when available (for example `ECONNREFUSED`, `ENOTFOUND`, or `ETIMEDOUT`).
 - **Schema migration:** existing databases are migrated automatically and
   idempotently at startup (composite `(source, event_id)` keys).
 
@@ -250,7 +256,7 @@ npm run lint
 The unit and end-to-end suites use the in-memory store and queue
 (`NODE_ENV=test`). `npm run test:integration` starts PostgreSQL 16 and Redis 7
 with Testcontainers and exercises persistence, queue retry scheduling, and
-receiver timeout recovery; Docker must be available.
+Redis command pauses and receiver timeout recovery; Docker must be available.
 
 ## Limitations
 
